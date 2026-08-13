@@ -10,12 +10,17 @@
  * @module services/TikTokService
  */
 
-import { WebcastPushConnection } from "tiktok-live-connector";
+import {
+	ControlEvent,
+	TikTokLiveConnection,
+	WebcastEvent,
+} from "tiktok-live-connector";
 import {
 	normalizeChat,
 	normalizeGift,
 	normalizeLike,
 	normalizeShare,
+	normalizeUser,
 } from "../lib/tiktokEventNormalizer.js";
 import { getDelay, shouldRetry, sleep } from "../lib/tiktokReconnectPolicy.js";
 
@@ -44,6 +49,7 @@ class TikTokService {
 		 * @type {Map<string, {attempting: boolean, attempt: number}>}
 		 */
 		this.reconnectState = new Map();
+		this.isShuttingDown = false;
 
 		// Cleanup interval - check for inactive connections every minute
 		this.cleanupInterval = setInterval(
@@ -75,12 +81,9 @@ class TikTokService {
 
 		try {
 			// Create new TikTok Live connection
-			const connection = new WebcastPushConnection(username, {
+			const connection = new TikTokLiveConnection(username, {
 				processInitialData: true,
 				enableExtendedGiftInfo: true,
-				enableWebsocketUpgrade: true,
-				requestPollingIntervalMs: 2000,
-				sessionId: null,
 			});
 
 			// Store in Map
@@ -98,14 +101,23 @@ class TikTokService {
 			// ==========================================
 
 			/** Handle Chat Messages */
-			connection.on("chat", (data) => {
+			connection.on(WebcastEvent.CHAT, (data) => {
 				this.updateActivity(username);
 				const payload = normalizeChat(data);
 				io.to(username).emit("tiktok_chat", payload);
 			});
 
+			/** Handle viewers entering the live room */
+			connection.on(WebcastEvent.MEMBER, (data) => {
+				this.updateActivity(username);
+				io.to(username).emit("tiktok_member", {
+					user: normalizeUser(data),
+					timestamp: Date.now(),
+				});
+			});
+
 			/** Handle Like Events */
-			connection.on("like", (data) => {
+			connection.on(WebcastEvent.LIKE, (data) => {
 				this.updateActivity(username);
 				const payload = normalizeLike(data);
 				io.to(username).emit("tiktok_like", payload);
@@ -115,17 +127,15 @@ class TikTokService {
 			});
 
 			/** Handle Share Events */
-			connection.on("social", (data) => {
-				if (data.displayType === "pm_mt_msg_viewer_share") {
-					this.updateActivity(username);
-					const payload = normalizeShare(data);
-					io.to(username).emit("tiktok_share", payload);
-					console.log(`[${username}] Share from ${payload.user.nickname}`);
-				}
+			connection.on(WebcastEvent.SHARE, (data) => {
+				this.updateActivity(username);
+				const payload = normalizeShare(data);
+				io.to(username).emit("tiktok_share", payload);
+				console.log(`[${username}] Share from ${payload.user.nickname}`);
 			});
 
 			/** Handle Gift Events — single canonical emit, no legacy duplication */
-			connection.on("gift", (data) => {
+			connection.on(WebcastEvent.GIFT, (data) => {
 				this.updateActivity(username);
 				const payload = normalizeGift(data);
 				io.to(username).emit("tiktok_gift", payload);
@@ -137,7 +147,7 @@ class TikTokService {
 			// ==========================================
 			// CONNECTION STATUS HANDLERS
 			// ==========================================
-			connection.on("connected", (state) => {
+			connection.on(ControlEvent.CONNECTED, (state) => {
 				console.log(`[TikTokService] Connected to live: ${username}`);
 				io.to(username).emit("tiktok_connected", {
 					roomId: state.roomId,
@@ -145,7 +155,7 @@ class TikTokService {
 				});
 			});
 
-			connection.on("disconnected", () => {
+			connection.on(ControlEvent.DISCONNECTED, () => {
 				console.log(`[TikTokService] Disconnected from: ${username}`);
 				this.connections.delete(username);
 				io.to(username).emit("tiktok_disconnected", {
@@ -154,12 +164,12 @@ class TikTokService {
 
 				// Auto-reconnect if there are still clients in the room
 				const clientCount = this.getClientCount(username);
-				if (clientCount > 0) {
+				if (clientCount > 0 && !this.isShuttingDown) {
 					this._scheduleReconnect(username, io);
 				}
 			});
 
-			connection.on("error", (err) => {
+			connection.on(ControlEvent.ERROR, (err) => {
 				console.error(`[TikTokService] Error for ${username}:`, err.message);
 				io.to(username).emit("tiktok_error", {
 					message: err.message,
@@ -266,6 +276,12 @@ class TikTokService {
 			this.connections.delete(username);
 			console.log(`[TikTokService] Disconnected: ${username}`);
 		}
+	}
+
+	shutdown() {
+		this.isShuttingDown = true;
+		clearInterval(this.cleanupInterval);
+		for (const username of [...this.connections.keys()]) this.disconnect(username);
 	}
 
 	/**

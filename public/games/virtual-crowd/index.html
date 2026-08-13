@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Virtual Crowd — TikTok Live</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="stage" aria-label="TikTok virtual crowd overlay"></canvas>
+
+    <div class="topbar">
+      <div class="brand"><span>LIVE</span> VIRTUAL CROWD</div>
+      <div id="connection" class="status waiting">ĐANG KẾT NỐI</div>
+      <button id="soundToggle" class="sound-toggle" type="button">🔊 ÂM THANH</button>
+      <div id="viewerCount" class="count">0 NHÂN VẬT</div>
+    </div>
+
+    <aside class="gift-guide">
+      <div class="guide-title">TƯƠNG TÁC</div>
+      <div><b>💬</b><span>CHAT</span><small>Bong bóng thoại</small></div>
+      <div><b>❤️</b><span>THẢ TIM</span><small>Hiệu ứng tim</small></div>
+      <div><b>🎁</b><span>TẶNG QUÀ</span><small>Spotlight nhân vật</small></div>
+      <div><b>🎆</b><span>QUÀ LỚN</span><small>Pháo hoa sân khấu</small></div>
+    </aside>
+
+    <div id="eventFeed" class="event-feed"></div>
+    <div id="emptyState" class="empty-state">
+      <div class="empty-icon">🎭</div>
+      <strong>Đang chờ khán giả vào LIVE...</strong>
+      <span>Mỗi viewer sẽ trở thành một nhân vật trên sân khấu</span>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/lib/tiktok-bridge.js"></script>
+    <script src="config.js"></script>
+    <script src="sound-fx.js"></script>
+    <script src="crowd-engine.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>

@@ -12,10 +12,12 @@
  * @returns {{uniqueId: string, nickname: string, profilePictureUrl: string}}
  */
 export function normalizeUser(raw) {
+	const user = raw?.user || raw || {};
 	return {
-		uniqueId: raw.uniqueId || "",
-		nickname: raw.nickname || raw.uniqueId || "Anonymous",
-		profilePictureUrl: raw.profilePictureUrl || "",
+		uniqueId: user.uniqueId || user.displayId || "",
+		nickname: user.nickname || user.uniqueId || user.displayId || "Anonymous",
+		profilePictureUrl:
+			user.profilePictureUrl || user.avatarThumb?.urlList?.[0] || "",
 	};
 }
 
@@ -27,7 +29,7 @@ export function normalizeUser(raw) {
 export function normalizeChat(raw) {
 	return {
 		user: normalizeUser(raw),
-		comment: (raw.comment || "").toLowerCase().trim(),
+		comment: (raw.comment || raw.content || "").toLowerCase().trim(),
 		timestamp: Date.now(),
 	};
 }
@@ -40,8 +42,8 @@ export function normalizeChat(raw) {
 export function normalizeLike(raw) {
 	return {
 		user: normalizeUser(raw),
-		likeCount: raw.likeCount || 0,
-		totalLikeCount: raw.totalLikeCount || 0,
+		likeCount: raw.likeCount || raw.count || 0,
+		totalLikeCount: raw.totalLikeCount || Number(raw.total) || 0,
 		timestamp: Date.now(),
 	};
 }
@@ -77,11 +79,13 @@ export function categorizeGift(value) {
  * @returns {{user: Object, giftId: number, giftName: string, giftValue: number, repeatCount: number, giftType: string, timestamp: number}}
  */
 export function normalizeGift(raw) {
-	const giftValue = raw.diamondCount || raw.giftValue || 1;
+	const giftInfo = raw.extendedGiftInfo || raw.gift || raw.giftDetails || {};
+	const giftValue =
+		raw.diamondCount || giftInfo.diamondCount || raw.giftValue || 1;
 	return {
 		user: normalizeUser(raw),
-		giftId: raw.giftId || 0,
-		giftName: raw.giftName || raw.giftDetails?.giftName || "Unknown Gift",
+		giftId: Number(raw.giftId || giftInfo.id) || 0,
+		giftName: raw.giftName || giftInfo.giftName || giftInfo.name || "Unknown Gift",
 		giftValue,
 		repeatCount: raw.repeatCount || 1,
 		giftType: categorizeGift(giftValue),

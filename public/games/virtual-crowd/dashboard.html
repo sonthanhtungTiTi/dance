@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Virtual Crowd Control</title>
+    <link rel="stylesheet" href="dashboard.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <span class="live-dot"></span>
+        <strong>VIRTUAL CROWD</strong>
+        <small>CONTROL CENTER</small>
+      </div>
+      <div id="serverStatus" class="server-status offline">SERVER OFFLINE</div>
+    </header>
+
+    <main>
+      <section class="panel connection-panel">
+        <div class="panel-title"><span>01</span><h2>Kết nối overlay</h2></div>
+        <div class="connection-grid">
+          <label>TikTok username<input id="username" value="new.world.019" autocomplete="off" /></label>
+          <div class="url-box"><span>Overlay URL</span><code id="overlayUrl"></code></div>
+          <button id="copyUrl" class="secondary">SAO CHÉP URL</button>
+          <button id="openOverlay" class="primary">MỞ OVERLAY ↗</button>
+        </div>
+      </section>
+
+      <div class="dashboard-grid">
+        <section class="panel">
+          <div class="panel-title"><span>02</span><h2>Âm thanh</h2></div>
+          <label class="switch-row">Bật âm thanh<input id="soundEnabled" type="checkbox" checked /><i></i></label>
+          <label class="range-row"><span>Âm lượng <output id="volumeValue">55%</output></span><input id="volume" type="range" min="0" max="1" step="0.05" value="0.55" /></label>
+          <button class="test-sound secondary" data-test="small-gift">TEST ÂM THANH</button>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><span>03</span><h2>Nhân vật</h2></div>
+          <label class="range-row"><span>Kích thước <output id="scaleValue">100%</output></span><input id="avatarScale" type="range" min="0.55" max="1.8" step="0.05" value="1" /></label>
+          <label class="range-row"><span>Tối đa <output id="limitValue">70</output></span><input id="avatarLimit" type="range" min="10" max="120" step="5" value="70" /></label>
+          <button id="clearCrowd" class="danger">XÓA TOÀN BỘ NHÂN VẬT</button>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><span>04</span><h2>Ánh sáng club</h2></div>
+          <label class="range-row"><span>Cường độ <output id="lightValue">100%</output></span><input id="lightIntensity" type="range" min="0" max="1.8" step="0.1" value="1" /></label>
+          <label class="range-row"><span>Tốc độ xoay <output id="speedValue">100%</output></span><input id="lightSpeed" type="range" min="0.15" max="2.5" step="0.05" value="1" /></label>
+          <label class="switch-row">Bảng tương tác<input id="showGuide" type="checkbox" checked /><i></i></label>
+          <label class="switch-row">Event feed<input id="showFeed" type="checkbox" checked /><i></i></label>
+        </section>
+
+        <section class="panel action-panel">
+          <div class="panel-title"><span>05</span><h2>Test action trực tiếp</h2></div>
+          <div class="action-grid">
+            <button data-test="spawn">👤 VIEWER VÀO</button>
+            <button data-test="chat">💬 CHAT</button>
+            <button data-test="like">❤️ LIKE</button>
+            <button data-test="share">📣 SHARE</button>
+            <button data-test="small-gift" class="gift-small">🌹 QUÀ NHỎ</button>
+            <button data-test="medium-gift" class="gift-medium">🎤 QUÀ VỪA</button>
+            <button data-test="mega-gift" class="gift-mega">🎸 QUÀ LỚN</button>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel activity-panel">
+        <div class="panel-title"><span>06</span><h2>Trạng thái điều khiển</h2></div>
+        <div id="activityLog"><p>Dashboard sẵn sàng.</p></div>
+      </section>
+    </main>
+
+    <div id="toast"></div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="dashboard.js"></script>
+  </body>
+</html>

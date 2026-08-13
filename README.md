@@ -16,6 +16,24 @@ An open-source platform that creates interactive game overlays for TikTok Live s
 
 ## Available Games
 
+### Virtual Crowd 🎭
+
+Every viewer becomes an animated character in a live virtual venue. TikTok events stay attached to the viewer who triggered them.
+
+- **Viewer Spawn**: Room members become unique characters with their TikTok name and profile photo
+- **Chat Bubbles**: Comments appear above the matching character
+- **Gift Spotlight**: Gifts focus and enlarge the sender while showing the gift name, count, and diamond value
+- **Live Effects**: Likes create hearts; shares create callouts; valuable gifts launch fireworks
+- **Club Stage**: Realistic bar interior with independently sweeping moving-head beams, lasers, beat strobes, and gift-triggered pyrotechnics
+- **Character Dances**: Each mushroom-head character has its own continuous dance style, amplified during gift spotlights
+- **Action Audio**: Rate-limited synthesized sounds for joins, chat, likes, shares, gift tiers, bass drops, and pyrotechnics
+- **OBS Ready**: Responsive transparent overlay for vertical or horizontal scenes
+- **Demo Mode**: Add `?demo=1` to the overlay URL to test without a live stream
+
+Virtual Crowd audio URL options: `sound=0` starts muted, while `volume=0.55` sets the initial volume from `0` to `1`.
+
+Open `/games/virtual-crowd/dashboard.html` for the live control center. It controls audio, character size/limit, club lighting, overlay UI, scene clearing, and simulated actions without reloading OBS.
+
 ### Horse Racing 🏇
 
 Gift-powered horse race with 5 country lanes. Viewers send gifts to move their country's horse forward.
@@ -31,7 +49,7 @@ Gift-powered horse race with 5 country lanes. Viewers send gifts to move their c
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - npm
 
 ### Installation

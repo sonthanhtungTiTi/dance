@@ -36,6 +36,7 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3000;
+const virtualCrowdSettings = new Map();
 
 // ==========================================
 // MIDDLEWARE & STATIC FILES
@@ -104,7 +105,16 @@ io.on("connection", (socket) => {
     console.log(`[Socket] ${socket.id} joined room: ${normalizedUsername}`);
 
     // Update room client tracking
-    tiktokService.addClientToRoom(normalizedUsername);
+		tiktokService.addClientToRoom(normalizedUsername);
+
+		const savedCrowdSettings = virtualCrowdSettings.get(normalizedUsername);
+		if (savedCrowdSettings) {
+			socket.emit("virtual_crowd_control", {
+				action: "settings",
+				payload: savedCrowdSettings,
+				timestamp: Date.now(),
+			});
+		}
 
     // Connect to TikTok Live (reuses existing connection if available)
     try {
@@ -156,9 +166,26 @@ io.on("connection", (socket) => {
   /**
    * Debug: Ping-pong for connection testing
    */
-  socket.on("ping", () => {
-    socket.emit("pong", { timestamp: Date.now() });
-  });
+	socket.on("ping", () => {
+		socket.emit("pong", { timestamp: Date.now() });
+	});
+
+	/** Local control dashboard → Virtual Crowd overlay */
+	socket.on("virtual-crowd-control", (message, acknowledge) => {
+		const username = String(message?.username || "").toLowerCase().trim();
+		const allowedActions = new Set(["settings", "test", "clear"]);
+		if (!username || !allowedActions.has(message?.action)) {
+			if (typeof acknowledge === "function") acknowledge({ ok: false, message: "Invalid control message" });
+			return;
+		}
+		if (message.action === "settings") virtualCrowdSettings.set(username, message.payload || {});
+		io.to(username).emit("virtual_crowd_control", {
+			action: message.action,
+			payload: message.payload || {},
+			timestamp: Date.now(),
+		});
+		if (typeof acknowledge === "function") acknowledge({ ok: true });
+	});
 });
 
 // ==========================================
@@ -177,10 +204,7 @@ process.on("SIGINT", () => {
   console.log("\n[Server] Shutting down...");
 
   // Disconnect all TikTok connections
-  const stats = tiktokService.getStats();
-  stats.connections.forEach((username) => {
-    tiktokService.disconnect(username);
-  });
+	tiktokService.shutdown();
 
   server.close(() => {
     console.log("[Server] Goodbye!");

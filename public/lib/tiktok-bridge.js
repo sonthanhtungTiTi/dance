@@ -15,10 +15,12 @@
 			this.socket = null;
 			this.username = null;
 			this.eventHandlers = {
+				member: [],
 				chat: [],
 				gift: [],
 				like: [],
 				share: [],
+				control: [],
 				connected: [],
 				disconnected: [],
 				reconnecting: [],
@@ -59,10 +61,12 @@
 			});
 
 			// Event relay — canonical events only (no legacy duplicates)
+			this.socket.on("tiktok_member", (data) => this._dispatch("member", data));
 			this.socket.on("tiktok_chat", (data) => this._dispatch("chat", data));
 			this.socket.on("tiktok_gift", (data) => this._dispatch("gift", data));
 			this.socket.on("tiktok_like", (data) => this._dispatch("like", data));
 			this.socket.on("tiktok_share", (data) => this._dispatch("share", data));
+			this.socket.on("virtual_crowd_control", (data) => this._dispatch("control", data));
 
 			this.socket.on("tiktok_disconnected", () => {
 				console.log("[TikTokBridge] TikTok disconnected");
