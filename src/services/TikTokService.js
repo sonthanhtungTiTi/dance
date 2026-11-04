@@ -49,6 +49,7 @@ class TikTokService {
 		 * @type {Map<string, {attempting: boolean, attempt: number}>}
 		 */
 		this.reconnectState = new Map();
+		this.lastErrors = new Map();
 		this.isShuttingDown = false;
 
 		// Cleanup interval - check for inactive connections every minute
@@ -78,12 +79,14 @@ class TikTokService {
 		}
 
 		console.log(`[TikTokService] Creating new connection for: ${username}`);
+		console.log(`[TikTokService] Euler sign key: ${process.env.EULER_SIGN_API_KEY ? "configured" : "missing"}`);
 
 		try {
 			// Create new TikTok Live connection
 			const connection = new TikTokLiveConnection(username, {
+				signApiKey: process.env.EULER_SIGN_API_KEY,
 				processInitialData: true,
-				enableExtendedGiftInfo: true,
+				enableExtendedGiftInfo: false,
 			});
 
 			// Store in Map
@@ -179,12 +182,15 @@ class TikTokService {
 
 			// Establish connection
 			await connection.connect();
+			this.lastErrors.delete(username);
 			return true;
 		} catch (error) {
+			const message = error?.message || String(error || "Unknown TikTok connection error");
 			console.error(
 				`[TikTokService] Cannot connect to ${username}:`,
-				error.message,
+				message,
 			);
+			this.lastErrors.set(username, message);
 			this.connections.delete(username);
 			return false;
 		}
@@ -323,6 +329,10 @@ class TikTokService {
 	 */
 	getClientCount(username) {
 		return this.roomClients.get(username) || 0;
+	}
+
+	getLastError(username) {
+		return this.lastErrors.get(username) || "";
 	}
 
 	/**

@@ -9,16 +9,31 @@ class CrowdEngine {
 		this.lastSpawn = 0;
 		this.heat = 0;
 		this.hypeUntil = 0;
+		this.pendingHype = null;
 		this.heatCooldowns = new Map();
 		this.giftStreaks = new Map();
+		this.heatTarget = 50;
+		this.moment = null;
+		this.welcomeQueue = [];
+		this.announcements = [];
 	}
 
-	addHeat(points) {
+	addHeat(points, user, deferHype = false) {
 		const now = performance.now();
-		if (now < this.hypeUntil) return;
-		this.heat = Math.min(100, this.heat + points);
-		if (this.heat < 100) return;
+		if (now < this.hypeUntil || this.pendingHype) return;
+		this.heat = Math.min(this.heatTarget, this.heat + points);
+		if (this.heat < this.heatTarget) return;
+		this.pendingHype = this.avatars.get(this.userKey(user)) || null;
+		if (!deferHype && !this.focus) this.startHype();
+	}
+
+	startHype() {
+		const now = performance.now();
+		const avatar = this.pendingHype;
+		this.pendingHype = null;
 		this.hypeUntil = now + 7000;
+		this.moment = avatar ? { type: "hype", avatar, startedAt: now, until: this.hypeUntil, text: `${avatar.nickname} quẩy lên ae ơi!` } : null;
+		if (avatar) this.announcements.push({ type: "hype", text: `${avatar.nickname} quẩy lên ae ơi!` });
 		this.fireworks(9);
 		this.pyroFountains();
 		for (const avatar of this.avatars.values()) {
@@ -32,7 +47,7 @@ class CrowdEngine {
 		const now = performance.now();
 		if (now < (this.heatCooldowns.get(key) || 0)) return;
 		this.heatCooldowns.set(key, now + cooldownMs);
-		this.addHeat(points);
+		this.addHeat(points, user);
 	}
 
 	resetStage() {
@@ -43,8 +58,12 @@ class CrowdEngine {
 		this.focus = null;
 		this.heat = 0;
 		this.hypeUntil = 0;
+		this.pendingHype = null;
 		this.heatCooldowns.clear();
 		this.giftStreaks.clear();
+		this.moment = null;
+		this.welcomeQueue.length = 0;
+		this.announcements.length = 0;
 	}
 
 	userKey(user) {
@@ -66,7 +85,7 @@ class CrowdEngine {
 		return null;
 	}
 
-	spawn(user) {
+	spawn(user, source = "activity") {
 		const key = this.userKey(user);
 		while (this.avatars.size >= this.config.maxAvatars) {
 			const oldest = [...this.avatars.values()].sort((a, b) => a.lastActive - b.lastActive)[0];
@@ -92,12 +111,16 @@ class CrowdEngine {
 			chat: null,
 			chatUntil: 0,
 			likes: 0,
+			hostBadge: false,
 			spawnedAt: performance.now(),
+			spawnSource: source,
+			seenMember: source === "member",
 			action: null,
 			actionUntil: 0,
 		};
 		if (avatar.profilePictureUrl) this.loadImage(avatar);
 		this.avatars.set(key, avatar);
+		if (source === "member") this.welcomeQueue.push(avatar);
 		return avatar;
 	}
 
@@ -115,6 +138,14 @@ class CrowdEngine {
 	}
 
 	handleMember(data) {
+		const existing = this.avatars.get(this.userKey(data.user));
+		if (existing && !existing.seenMember) {
+			existing.seenMember = true;
+			existing.spawnSource = "member";
+			existing.spawnedAt = performance.now();
+			this.welcomeQueue.push(existing);
+			return;
+		}
 		this.queueUser(data.user, "member");
 	}
 
@@ -158,15 +189,18 @@ class CrowdEngine {
 		const fresh = !previous || now - previous.at > 10000 || count === 1;
 		const newCount = fresh ? count : Math.max(0, count - previous.count);
 		this.giftStreaks.set(streakKey, { count, at: now });
-		if (newCount) this.addHeat(Math.min(60, Math.ceil(Math.sqrt(unitValue) * 9 * newCount)));
-		const tier = value >= 100 ? "mega" : value >= 10 ? "medium" : "small";
-		const duration = tier === "mega" ? 8000 : tier === "medium" ? 5600 : 3300;
+		if (newCount) this.addHeat(Math.min(60, Math.ceil(Math.sqrt(unitValue) * 9 * newCount)), data.user, true);
+		const tier = unitValue > 5 ? "mega" : unitValue === 5 ? "medium" : "small";
+		const duration = tier === "mega" ? 6600 : tier === "medium" ? 3000 : 2700;
+		if (tier === "mega") avatar.hostBadge = true;
 		const gift = {
+			type: "gift",
 			avatar,
 			giftName: data.giftName || "Gift",
 			emoji: this.config.getGiftEmoji(data.giftName),
 			count,
 			value,
+			unitValue,
 			tier,
 			duration,
 			until: 0,
@@ -176,11 +210,11 @@ class CrowdEngine {
 			const oldTier = matching.tier;
 			matching.count = Math.max(matching.count, count);
 			matching.value = Math.max(matching.value, value);
-			matching.tier = matching.value >= 100 ? "mega" : matching.value >= 10 ? "medium" : "small";
-			matching.duration = matching.tier === "mega" ? 8000 : matching.tier === "medium" ? 5600 : 3300;
+			matching.tier = tier;
+			matching.duration = matching.variant === "helicopter" ? this.config.helicopterDurationMs : duration;
 			if (matching === this.focus) {
-				matching.until = Math.max(matching.until, performance.now() + (oldTier === matching.tier ? 1400 : matching.duration));
-				matching.avatar.action = matching.tier === "mega" ? "power" : matching.tier === "medium" ? "dance" : "jump";
+				if (matching.variant !== "helicopter") matching.until = Math.max(matching.until, performance.now() + (oldTier === matching.tier ? 1400 : matching.duration));
+				matching.avatar.action = matching.variant === "helicopter" ? (matching.outro ? "dance" : "helicopter") : matching.tier === "mega" ? "power" : matching.tier === "medium" ? "dance" : "jump";
 				matching.avatar.actionUntil = matching.until;
 				if (oldTier !== matching.tier) {
 					this.rings(matching.avatar, matching.tier === "mega" ? 4 : 2);
@@ -188,7 +222,7 @@ class CrowdEngine {
 					if (matching.tier === "mega") this.pyroFountains();
 				}
 			}
-		} else if (!this.focus) {
+		} else if (!this.focus && !this.hypeUntil) {
 			this.startGift(gift);
 		} else {
 			this.giftQueue.push(gift);
@@ -197,14 +231,45 @@ class CrowdEngine {
 	}
 
 	startGift(gift) {
-		gift.until = performance.now() + gift.duration;
+		gift.startedAt = performance.now();
+		gift.variant = gift.tier === "mega" ? (Math.random() < 0.5 ? "helicopter" : "dj") : null;
+		if (gift.variant === "helicopter") gift.duration = this.config.helicopterDurationMs;
+		gift.until = gift.startedAt + gift.duration;
 		this.focus = gift;
-		gift.avatar.action = gift.tier === "mega" ? "power" : gift.tier === "medium" ? "dance" : "jump";
+		if (!this.hypeUntil) this.moment = null;
+		const lines = ["cả sàn lên nhạc nào!", "lên sân khấu quẩy hết mình!", "DJ lên beat cho anh em nào!", "đêm nay cháy hết mình nhé!"];
+		const text = gift.variant === "helicopter" ? `🚁 ${gift.avatar.nickname} cất cánh!` : gift.tier === "mega" ? `${gift.avatar.nickname}, ${lines[Math.floor(Math.random() * lines.length)]}` : gift.tier === "medium" ? `${gift.avatar.nickname}, ae quẩy lên nào!` : `${gift.avatar.nickname} quẩy lên ae ơi!`;
+		gift.text = text;
+		this.announcements.push({ type: "gift", tier: gift.tier, variant: gift.variant, text });
+		gift.avatar.action = gift.variant === "helicopter" ? "helicopter" : gift.tier === "mega" ? "power" : gift.tier === "medium" ? "dance" : "jump";
+		gift.avatar.actionStartedAt = gift.startedAt;
 		gift.avatar.actionUntil = gift.until;
 		this.burst(gift.avatar, gift.emoji, Math.min(26, 7 + Math.ceil(Math.sqrt(gift.value))));
 		this.rings(gift.avatar, gift.tier === "mega" ? 4 : 2);
-		if (gift.tier !== "small") this.fireworks(gift.tier === "mega" ? 8 : 3);
-		if (gift.tier === "mega") this.pyroFountains();
+		if (gift.tier === "medium") this.fireworksAround(gift.avatar, 4);
+		if (gift.variant === "dj") this.fireworksAround(gift.avatar, 8);
+		if (gift.variant === "dj") this.pyroFountains();
+	}
+
+	finishHelicopter() {
+		if (this.focus?.variant !== "helicopter" || this.focus.outro) return;
+		this.focus.outro = true;
+		this.focus.until = performance.now() + 1600;
+		this.focus.text = `${this.focus.avatar.nickname}, lên ae lên lên!`;
+		this.focus.avatar.action = "dance";
+		this.focus.avatar.actionUntil = this.focus.until;
+	}
+
+	fireworksAround(avatar, count) {
+		for (let i = 0; i < count; i += 1) {
+			const angle = Math.PI * 2 * i / count;
+			const x = avatar.x + Math.cos(angle) * 0.1;
+			const y = avatar.y - 0.1 + Math.sin(angle) * 0.08;
+			for (let p = 0; p < 14; p += 1) {
+				const direction = Math.PI * 2 * p / 14;
+				this.effects.push({ type: "spark", x, y, vx: Math.cos(direction) * 0.065, vy: Math.sin(direction) * 0.065, life: 1, color: this.config.colors[i % this.config.colors.length] });
+			}
+		}
 	}
 
 	burst(avatar, symbol, count) {
@@ -260,13 +325,14 @@ class CrowdEngine {
 		if (this.hypeUntil && now >= this.hypeUntil) {
 			this.hypeUntil = 0;
 			this.heat = 0;
+			if (!this.focus && this.giftQueue.length) this.startGift(this.giftQueue.shift());
 		}
 		for (const [key, until] of this.heatCooldowns) if (until < now) this.heatCooldowns.delete(key);
 		for (const [key, streak] of this.giftStreaks) if (now - streak.at > 10000) this.giftStreaks.delete(key);
 		const spawnGap = 1000 / this.config.spawnPerSecond;
 		if (this.spawnQueue.length && now - this.lastSpawn >= spawnGap) {
 			const next = this.spawnQueue.shift();
-			if (!this.avatars.has(this.userKey(next.user))) this.spawn(next.user);
+			if (!this.avatars.has(this.userKey(next.user))) this.spawn(next.user, next.source);
 			this.lastSpawn = now;
 		}
 		for (const avatar of this.avatars.values()) {
@@ -274,7 +340,7 @@ class CrowdEngine {
 				avatar.targetX = 0.06 + Math.random() * 0.88;
 			}
 			avatar.direction = avatar.targetX >= avatar.x ? 1 : -1;
-			avatar.x += avatar.direction * avatar.speed * dt;
+			if (now - avatar.spawnedAt > 850) avatar.x += avatar.direction * avatar.speed * dt;
 			if (now > avatar.chatUntil) avatar.chat = null;
 		}
 		for (const effect of this.effects) {
@@ -287,11 +353,24 @@ class CrowdEngine {
 			else effect.life -= (effect.type === "spark" ? 0.8 : effect.type === "pyro" ? 0.58 : effect.type === "ring" ? 0.72 : 0.45) * dt;
 		}
 		this.effects = this.effects.filter((effect) => effect.life > 0);
+		if (this.effects.length > 480) this.effects.splice(0, this.effects.length - 480);
+		if (this.focus?.variant === "helicopter" && !this.focus.outro && now >= this.focus.until) this.finishHelicopter();
 		if (this.focus && now > this.focus.until) {
 			if (now >= this.hypeUntil) this.focus.avatar.action = null;
 			this.focus = null;
-			const next = this.giftQueue.shift();
-			if (next) this.startGift(next);
+			if (this.pendingHype) this.startHype();
+			else {
+				const next = this.giftQueue.shift();
+				if (next) this.startGift(next);
+			}
+		}
+		if (this.moment && now > this.moment.until) this.moment = null;
+		if (!this.focus && !this.moment && !this.hypeUntil && this.welcomeQueue.length) {
+			const avatar = this.welcomeQueue.shift();
+			if (this.avatars.get(avatar.key) === avatar) {
+				this.moment = { type: "welcome", avatar, startedAt: now, until: now + 2700, text: `${avatar.nickname} cùng quẩy nào anh em ơi!` };
+				this.announcements.push({ type: "welcome", text: `${avatar.nickname} cùng quẩy nào anh em ơi!` });
+			}
 		}
 		for (const avatar of this.avatars.values()) {
 			if (now - avatar.lastActive > this.config.inactivityMs) this.avatars.delete(avatar.key);

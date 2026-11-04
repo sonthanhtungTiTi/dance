@@ -126,7 +126,7 @@ io.on("connection", (socket) => {
         });
       } else {
         socket.emit("connection-error", {
-          message: `Cannot connect to ${normalizedUsername}'s live. Make sure they are currently streaming!`,
+          message: tiktokService.getLastError(normalizedUsername) || `Cannot connect to ${normalizedUsername}'s live. Make sure they are currently streaming!`,
         });
       }
     } catch (error) {

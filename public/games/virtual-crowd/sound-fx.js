@@ -5,6 +5,7 @@ class CrowdSoundFX {
 		this.context = null;
 		this.master = null;
 		this.lastPlayed = new Map();
+		if ("speechSynthesis" in window) window.speechSynthesis.cancel();
 	}
 
 	ensureContext() {
@@ -23,6 +24,7 @@ class CrowdSoundFX {
 
 	setEnabled(enabled) {
 		this.enabled = Boolean(enabled);
+		if (!this.enabled && "speechSynthesis" in window) window.speechSynthesis.cancel();
 		if (this.master) this.master.gain.setTargetAtTime(this.enabled ? this.volume : 0, this.context.currentTime, 0.015);
 		if (this.enabled) this.ensureContext();
 	}
@@ -116,6 +118,13 @@ class CrowdSoundFX {
 		[220, 330, 440, 660].forEach((frequency, index) => this.tone({ frequency, endFrequency: frequency * 1.5, delay: 0.12 + index * 0.11, duration: 0.65, volume: 0.1, type: "sawtooth" }));
 		for (let i = 0; i < 4; i += 1) this.noise({ delay: 0.7 + i * 0.16, duration: 0.22, volume: 0.11, frequency: 2800, sweepTo: 700 });
 	}
+
+	djBeat() {
+		if (!this.enabled || !this.canPlay("dj-beat", 450)) return;
+		this.tone({ frequency: 95, endFrequency: 42, duration: 0.22, volume: 0.14, type: "sine" });
+		this.noise({ delay: 0.23, duration: 0.09, volume: 0.035, frequency: 6000, sweepTo: 8000 });
+	}
+
 }
 
 window.CrowdSoundFX = CrowdSoundFX;

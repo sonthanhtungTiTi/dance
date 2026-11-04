@@ -7,10 +7,12 @@
 	const defaults = { soundEnabled: true, volume: 0.55, avatarScale: 1, avatarLimit: 70, lightIntensity: 1, lightSpeed: 1, showGuide: true, showFeed: true };
 	const saved = JSON.parse(localStorage.getItem("virtualCrowdControl") || "{}");
 	const state = { ...defaults, ...saved };
+	const savedQuality = localStorage.getItem("virtualCrowdQuality") || "balanced";
+	$("renderQuality").value = ["low", "balanced", "high"].includes(savedQuality) ? savedQuality : "balanced";
 	$("username").value = new URLSearchParams(location.search).get("id") || localStorage.getItem("virtualCrowdUsername") || $("username").value;
 
 	function username() { return $("username").value.trim().replace(/^@/, "").toLowerCase(); }
-	function overlayUrl() { return `${location.origin}/games/virtual-crowd/index.html?id=${encodeURIComponent(username())}`; }
+	function overlayUrl() { return `${location.origin}/games/virtual-crowd/index.html?id=${encodeURIComponent(username())}&quality=${$("renderQuality").value}`; }
 	function refreshUrl() { $("overlayUrl").textContent = overlayUrl(); localStorage.setItem("virtualCrowdUsername", username()); }
 
 	function applyStateToInputs() {
@@ -69,6 +71,7 @@
 	socket.on("connect", () => { $("serverStatus").textContent = "SERVER ONLINE"; $("serverStatus").className = "server-status online"; log("Đã kết nối server"); });
 	socket.on("disconnect", () => { $("serverStatus").textContent = "SERVER OFFLINE"; $("serverStatus").className = "server-status offline"; log("Mất kết nối server", true); });
 	$("username").addEventListener("input", refreshUrl);
+	$("renderQuality").addEventListener("change", () => { localStorage.setItem("virtualCrowdQuality", $("renderQuality").value); refreshUrl(); notify("Đã cập nhật link. Hãy mở lại nguồn overlay."); });
 	for (const id of controls) $(id).addEventListener("input", sendSettings);
 	document.querySelectorAll("[data-test]").forEach((button) => button.addEventListener("click", () => { send("test", { type: button.dataset.test }); notify(`Đã chạy ${button.textContent.trim()}`); }));
 	$("clearCrowd").addEventListener("click", () => { send("clear", {}); notify("Đã xóa sân khấu"); });

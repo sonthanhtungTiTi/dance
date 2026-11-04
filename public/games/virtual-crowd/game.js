@@ -2,6 +2,9 @@
 	const config = window.CROWD_CONFIG;
 	const engine = new CrowdEngine(config);
 	const params = new URLSearchParams(location.search);
+	const quality = ["low", "high"].includes(params.get("quality")) ? params.get("quality") : "balanced";
+	const targetFrameMs = 1000 / (quality === "low" ? 24 : quality === "high" ? 60 : 30);
+	const pixelBudget = quality === "low" ? 540 * 960 : quality === "high" ? Infinity : 720 * 1280;
 	const initialVolume = Math.max(0, Math.min(1, Number(params.get("volume") ?? 0.55)));
 	const soundFX = new CrowdSoundFX({ volume: initialVolume, enabled: params.get("sound") !== "0" });
 	const runtime = { avatarScale: 1, lightIntensity: 1, lightSpeed: 1, showGuide: true, showFeed: true };
@@ -13,9 +16,12 @@
 	const empty = document.getElementById("emptyState");
 	const guide = document.querySelector(".gift-guide");
 	const soundToggle = document.getElementById("soundToggle");
+	const backgroundMusic = document.getElementById("backgroundMusic");
+	const helicopterAudio = document.getElementById("helicopterAudio");
 	const heatValue = document.getElementById("heatValue");
 	const heatFill = document.getElementById("heatFill");
 	const hypeBanner = document.getElementById("hypeBanner");
+	const momentCaption = document.getElementById("momentCaption");
 	const characterImages = config.characters.map((src) => {
 		const image = new Image();
 		image.src = src;
@@ -23,17 +29,65 @@
 	});
 	const clubBackground = new Image();
 	clubBackground.src = "assets/backgrounds/club-main.webp";
+	const backgroundCanvas = document.createElement("canvas");
+	const backgroundCtx = backgroundCanvas.getContext("2d");
+	clubBackground.onload = prepareBackground;
+	guide.querySelectorAll(".gift-tile img").forEach((image) => {
+		const showFallback = () => { image.hidden = true; image.nextElementSibling.hidden = false; };
+		image.addEventListener("error", showFallback);
+		if (image.complete && !image.naturalWidth) showFallback();
+	});
+	helicopterAudio.addEventListener("loadedmetadata", () => {
+		if (!Number.isFinite(helicopterAudio.duration)) return;
+		config.helicopterDurationMs = Math.round(helicopterAudio.duration * 1000);
+		if (engine.focus?.variant === "helicopter" && !engine.focus.outro) {
+			engine.focus.duration = config.helicopterDurationMs;
+			engine.focus.until = engine.focus.startedAt + engine.focus.duration;
+		}
+	});
+	helicopterAudio.addEventListener("ended", () => {
+		engine.finishHelicopter();
+		syncBackgroundMusic();
+	});
 
 	function updateSoundButton() {
-		soundToggle.textContent = soundFX.enabled ? "🔊 ÂM THANH" : "🔇 ĐÃ TẮT";
+		soundToggle.textContent = !soundFX.enabled ? "🔇 ĐÃ TẮT" : backgroundMusic.paused ? "▶ BẬT NHẠC" : "🔊 ÂM THANH";
 		soundToggle.classList.toggle("muted", !soundFX.enabled);
 	}
+
+	function syncBackgroundMusic() {
+		backgroundMusic.volume = soundFX.enabled ? soundFX.volume * (engine.focus?.variant === "helicopter" && !helicopterAudio.paused ? 0.08 : 0.35) : 0;
+		if (!soundFX.enabled) {
+			backgroundMusic.pause();
+			helicopterAudio.pause();
+			updateSoundButton();
+			return;
+		}
+		backgroundMusic.play().then(updateSoundButton).catch(updateSoundButton);
+	}
+
+	function playHelicopter() {
+		if (!soundFX.enabled) return;
+		helicopterAudio.currentTime = 0;
+		helicopterAudio.volume = Math.min(1, soundFX.volume * 0.8);
+		helicopterAudio.play().then(syncBackgroundMusic).catch(syncBackgroundMusic);
+	}
 	soundToggle.addEventListener("click", () => {
+		if (soundFX.enabled && backgroundMusic.paused) {
+			soundFX.ensureContext();
+			syncBackgroundMusic();
+			return;
+		}
 		soundFX.setEnabled(!soundFX.enabled);
+		syncBackgroundMusic();
 		updateSoundButton();
 	});
 	updateSoundButton();
-	document.addEventListener("pointerdown", () => soundFX.ensureContext(), { once: true });
+	setTimeout(syncBackgroundMusic, 0);
+	document.addEventListener("pointerdown", () => {
+		soundFX.ensureContext();
+		syncBackgroundMusic();
+	}, { once: true });
 	let width = 0;
 	let height = 0;
 	let dpr = 1;
@@ -41,12 +95,34 @@
 	let lastCount = -1;
 
 	function resize() {
-		dpr = Math.min(window.devicePixelRatio || 1, 2);
 		width = window.innerWidth;
 		height = window.innerHeight;
-		canvas.width = width * dpr;
-		canvas.height = height * dpr;
+		dpr = Math.min(window.devicePixelRatio || 1, quality === "high" ? 2 : 1.5, Math.sqrt(pixelBudget / Math.max(1, width * height)));
+		canvas.width = Math.max(1, Math.round(width * dpr));
+		canvas.height = Math.max(1, Math.round(height * dpr));
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		prepareBackground();
+	}
+
+	function prepareBackground() {
+		if (!width || !height) return;
+		backgroundCanvas.width = canvas.width;
+		backgroundCanvas.height = canvas.height;
+		backgroundCtx.fillStyle = "#08030a";
+		backgroundCtx.fillRect(0, 0, backgroundCanvas.width, backgroundCanvas.height);
+		if (clubBackground.naturalWidth) {
+			const imageRatio = clubBackground.naturalWidth / clubBackground.naturalHeight;
+			const viewRatio = width / height;
+			let sw = clubBackground.naturalWidth;
+			let sh = clubBackground.naturalHeight;
+			let sx = 0;
+			let sy = 0;
+			if (imageRatio > viewRatio) { sw = sh * viewRatio; sx = (clubBackground.naturalWidth - sw) / 2; }
+			else { sh = sw / viewRatio; sy = (clubBackground.naturalHeight - sh) / 2; }
+			backgroundCtx.drawImage(clubBackground, sx, sy, sw, sh, 0, 0, backgroundCanvas.width, backgroundCanvas.height);
+		}
+		backgroundCtx.fillStyle = "rgba(9, 1, 12, .18)";
+		backgroundCtx.fillRect(0, 0, backgroundCanvas.width, backgroundCanvas.height);
 	}
 	window.addEventListener("resize", resize);
 	resize();
@@ -97,7 +173,6 @@
 	});
 	TikTokBridge.on("gift", (data) => {
 		engine.handleGift(data);
-		soundFX.gift(giftTier(data));
 		addFeed(`${config.getGiftEmoji(data.giftName)} ${data.user.nickname} tặng ${data.giftName} ×${data.repeatCount}`, "gift");
 	});
 	TikTokBridge.on("control", ({ action, payload }) => {
@@ -111,6 +186,7 @@
 	function applyControlSettings(settings = {}) {
 		if (typeof settings.soundEnabled === "boolean") soundFX.setEnabled(settings.soundEnabled);
 		if (Number.isFinite(Number(settings.volume))) soundFX.setVolume(Number(settings.volume));
+		syncBackgroundMusic();
 		if (Number.isFinite(Number(settings.avatarScale))) runtime.avatarScale = Math.max(0.5, Math.min(2, Number(settings.avatarScale)));
 		if (Number.isFinite(Number(settings.avatarLimit))) config.maxAvatars = Math.max(10, Math.min(150, Number(settings.avatarLimit)));
 		if (Number.isFinite(Number(settings.lightIntensity))) runtime.lightIntensity = Math.max(0, Math.min(2, Number(settings.lightIntensity)));
@@ -134,14 +210,9 @@
 		if (type === "chat") { engine.handleChat({ user, comment: "Dashboard đang điều khiển tôi!" }); soundFX.chat(); }
 		if (type === "like") { engine.handleLike({ user, likeCount: 12 }); soundFX.like(); }
 		if (type === "share") { engine.handleShare({ user }); soundFX.share(); }
-		if (type === "small-gift") { const gift = { user, giftName: "Rose", giftValue: 1, repeatCount: 1 }; engine.handleGift(gift); soundFX.gift("small"); }
-		if (type === "medium-gift") { const gift = { user, giftName: "Singing Mic", giftValue: 20, repeatCount: 1 }; engine.handleGift(gift); soundFX.gift("medium"); }
-		if (type === "mega-gift") { const gift = { user, giftName: "Concert", giftValue: 199, repeatCount: 1 }; engine.handleGift(gift); soundFX.gift("mega"); }
-	}
-
-	function giftTier(data) {
-		const total = Math.max(1, Number(data.giftValue) || 1) * Math.max(1, Number(data.repeatCount) || 1);
-		return total >= 100 ? "mega" : total >= 10 ? "medium" : "small";
+		if (type === "small-gift") engine.handleGift({ user, giftName: "Hoa hồng", giftValue: 1, repeatCount: 1 });
+		if (type === "medium-gift") engine.handleGift({ user, giftName: "Bắn tim", giftValue: 5, repeatCount: 1 });
+		if (type === "mega-gift") engine.handleGift({ user, giftName: "Bánh vòng", giftValue: 30, repeatCount: 1 });
 	}
 
 	function roundedRect(x, y, w, h, radius) {
@@ -151,21 +222,7 @@
 
 	function drawBackground(time) {
 		const lightTime = time * runtime.lightSpeed;
-		ctx.fillStyle = "#08030a";
-		ctx.fillRect(0, 0, width, height);
-		if (clubBackground.complete && clubBackground.naturalWidth) {
-			const imageRatio = clubBackground.naturalWidth / clubBackground.naturalHeight;
-			const viewRatio = width / height;
-			let sw = clubBackground.naturalWidth;
-			let sh = clubBackground.naturalHeight;
-			let sx = 0;
-			let sy = 0;
-			if (imageRatio > viewRatio) { sw = sh * viewRatio; sx = (clubBackground.naturalWidth - sw) / 2; }
-			else { sh = sw / viewRatio; sy = (clubBackground.naturalHeight - sh) / 2; }
-			ctx.drawImage(clubBackground, sx, sy, sw, sh, 0, 0, width, height);
-		}
-		ctx.fillStyle = "rgba(9, 1, 12, .18)";
-		ctx.fillRect(0, 0, width, height);
+		ctx.drawImage(backgroundCanvas, 0, 0, width, height);
 
 		ctx.save();
 		ctx.globalCompositeOperation = "screen";
@@ -217,11 +274,15 @@
 	function drawAvatar(avatar, time, isFocused) {
 		const depth = Math.max(0, Math.min(1, (avatar.y - 0.57) / 0.38));
 		const baseSize = Math.max(52, Math.min(width, height) * (0.085 + depth * 0.045));
-		const focusScale = isFocused ? 1.48 : 1;
+		const focusScale = isFocused ? 1.22 : 1;
 		const ageScale = Math.min(1, (time - avatar.spawnedAt) / 280);
 		const size = baseSize * focusScale * Math.max(0, ageScale) * runtime.avatarScale;
 		const x = avatar.x * width;
-		const groundY = avatar.y * height;
+		const fallProgress = Math.max(0, (time - avatar.spawnedAt) / 850);
+		const falling = avatar.spawnSource === "member" && fallProgress < 1;
+		const fallOffset = falling ? -((1 - fallProgress) ** 2) * height * 0.85 : 0;
+		const landingBounce = avatar.spawnSource === "member" && fallProgress >= 1 && fallProgress < 1.3 ? Math.sin((fallProgress - 1) * Math.PI / 0.3) * size * 0.08 : 0;
+		const groundY = avatar.y * height + fallOffset - landingBounce;
 		const dancePhase = time * 0.0075 + avatar.phase;
 		let bob = Math.sin(dancePhase * 2) * size * 0.025;
 		let danceX = 0;
@@ -250,12 +311,15 @@
 		if (avatar.action === "jump") bob -= Math.abs(Math.sin(time * 0.012)) * size * 0.42;
 		if (avatar.action === "dance") { rotation += Math.sin(time * 0.018) * 0.18; danceX *= 1.8; }
 		if (avatar.action === "power") { bob -= Math.abs(Math.sin(time * 0.008)) * size * 0.2; scaleX *= 1.08; scaleY *= 1.08; }
+		if (avatar.action === "helicopter") { bob = -size * 0.12 + Math.sin(time * 0.018) * size * 0.05; danceX = 0; scaleX = 1; scaleY = 1; rotation = (time - avatar.actionStartedAt) * 0.014; }
 		const renderX = x + danceX;
 
 		ctx.save();
 		ctx.translate(renderX, groundY + bob);
 		ctx.scale(avatar.direction * scaleX, scaleY);
+		if (avatar.action === "helicopter") ctx.translate(0, -size * 0.5);
 		ctx.rotate(rotation * avatar.direction);
+		if (avatar.action === "helicopter") ctx.translate(0, size * 0.5);
 		ctx.shadowColor = isFocused ? "#fbbf24" : "#000";
 		ctx.shadowBlur = isFocused ? 28 : 12;
 		ctx.globalAlpha = Math.min(1, ageScale);
@@ -296,6 +360,16 @@
 		ctx.fill();
 		ctx.fillStyle = "white";
 		ctx.fillText(label, renderX, groundY + size * 0.235);
+		if (avatar.hostBadge) {
+			const badgeY = groundY + size * 0.55;
+			const badgeW = Math.max(62, size * 0.85);
+			ctx.fillStyle = "rgba(87, 50, 4, .94)";
+			roundedRect(renderX - badgeW / 2, badgeY - 12, badgeW, 20, 8);
+			ctx.fill();
+			ctx.fillStyle = "#ffe38a";
+			ctx.font = `800 ${Math.max(10, size * 0.15)}px system-ui`;
+			ctx.fillText("👑 CHỦ NHÀ", renderX, badgeY + 2, badgeW - 6);
+		}
 		ctx.restore();
 
 		if (avatar.chat) drawChat(avatar, renderX, groundY - size * 1.12 + bob, size);
@@ -353,6 +427,61 @@
 			ctx.quadraticCurveTo(radius * 0.55, 0, radius * 0.92, -radius * 0.17);
 			ctx.stroke();
 			ctx.restore();
+		}
+		ctx.restore();
+	}
+
+	function drawSpotlight(moment, time) {
+		if (!moment || (moment.type === "gift" && moment.tier === "small")) return;
+		const x = moment.avatar.x * width;
+		const y = moment.avatar.y * height;
+		ctx.save();
+		ctx.globalCompositeOperation = "screen";
+		const color = moment.type === "gift" && moment.tier === "mega" ? "168, 85, 247" : "255, 225, 130";
+		for (const side of [-1, 1]) {
+			const topX = x + side * width * 0.28;
+			const beam = ctx.createLinearGradient(topX, 0, x, y);
+			beam.addColorStop(0, `rgba(${color}, .05)`);
+			beam.addColorStop(1, `rgba(${color}, ${0.28 + Math.sin(time * 0.012) * 0.06})`);
+			ctx.fillStyle = beam;
+			ctx.beginPath();
+			ctx.moveTo(topX - 8, 0);
+			ctx.lineTo(topX + 8, 0);
+			ctx.lineTo(x + width * 0.09, y);
+			ctx.lineTo(x - width * 0.09, y);
+			ctx.fill();
+		}
+		ctx.restore();
+	}
+
+	function drawDjDeck(moment, time) {
+		if (moment?.variant !== "dj") return;
+		const deckW = Math.min(width * 0.52, 260);
+		const deckH = Math.min(height * 0.095, 68);
+		const x = width / 2 - deckW / 2;
+		const y = height * 0.83;
+		ctx.save();
+		ctx.fillStyle = "rgba(10, 9, 24, .94)";
+		ctx.strokeStyle = "#a855f7";
+		ctx.lineWidth = 2;
+		roundedRect(x, y, deckW, deckH, 12);
+		ctx.fill(); ctx.stroke();
+		for (const side of [-1, 1]) {
+			const centerX = width / 2 + side * deckW * 0.31;
+			ctx.strokeStyle = "#25f4ee";
+			ctx.lineWidth = 3;
+			ctx.beginPath();
+			ctx.arc(centerX, y + deckH / 2, deckH * 0.3, 0, Math.PI * 2);
+			ctx.stroke();
+			ctx.fillStyle = "#fe2c55";
+			ctx.beginPath();
+			ctx.arc(centerX + Math.cos(time * 0.014) * deckH * 0.2, y + deckH / 2 + Math.sin(time * 0.014) * deckH * 0.2, 3, 0, Math.PI * 2);
+			ctx.fill();
+		}
+		for (let i = 0; i < 5; i += 1) {
+			const barH = 8 + Math.abs(Math.sin(time * 0.012 + i * 1.7)) * deckH * 0.48;
+			ctx.fillStyle = i % 2 ? "#fbbf24" : "#a855f7";
+			ctx.fillRect(width / 2 - 19 + i * 8, y + deckH - barH - 8, 5, barH);
 		}
 		ctx.restore();
 	}
@@ -437,26 +566,58 @@
 	}
 
 	function frame(time) {
-		const dt = Math.min(0.04, (time - lastFrame) / 1000);
+		if (time - lastFrame < targetFrameMs - 1) {
+			requestAnimationFrame(frame);
+			return;
+		}
+		const dt = Math.min(0.05, (time - lastFrame) / 1000);
 		lastFrame = time;
 		engine.tick(dt);
-		const heat = Math.round(engine.heat);
+		for (const announcement of engine.announcements.splice(0)) {
+			if (announcement.type === "gift" && announcement.variant === "helicopter") playHelicopter();
+			else if (announcement.type === "gift") soundFX.gift(announcement.tier);
+			if (announcement.variant === "dj") soundFX.djBeat();
+		}
+		const heat = Math.round(engine.heat / engine.heatTarget * 100);
 		if (heatValue.textContent !== `${heat}%`) {
 			heatValue.textContent = `${heat}%`;
 			heatFill.style.width = `${heat}%`;
 		}
+		const moment = engine.moment?.type === "hype" ? engine.moment : engine.focus || engine.moment;
+		if (moment?.variant === "helicopter" && moment.outro && !helicopterAudio.paused) helicopterAudio.pause();
+		hypeBanner.textContent = engine.moment?.type === "hype" ? `🔥 ${engine.moment.text} 🔥` : "🔥 CẢ SÀN BÙNG NỔ! 🔥";
 		hypeBanner.classList.toggle("visible", engine.hypeUntil > performance.now());
+		momentCaption.textContent = moment?.type === "hype" ? "" : moment?.text || "";
+		momentCaption.classList.toggle("visible", Boolean(moment && moment.type !== "hype"));
 		ctx.clearRect(0, 0, width, height);
 		drawBackground(time);
-		const focused = engine.focus?.avatar;
+		const focused = moment?.avatar;
 		const avatars = [...engine.avatars.values()].sort((a, b) => a.y - b.y);
+		ctx.save();
+		if (focused) {
+			const age = Math.max(0, time - (moment.startedAt || time));
+			let zoom = 1.5;
+			if (moment.variant === "dj") zoom = 1.2 + Math.pow(Math.sin(Math.min(1, age / moment.duration) * Math.PI * 3), 2) * 0.65;
+			else zoom = 1 + Math.min(1, age / 400) * 0.5;
+			const easeOut = Math.min(1, Math.max(0, (moment.until - time) / 450));
+			zoom = 1 + (zoom - 1) * easeOut;
+			ctx.translate(width / 2, height * 0.68);
+			ctx.scale(zoom, zoom);
+			ctx.translate(-focused.x * width, -focused.y * height);
+		}
 		for (const avatar of avatars) if (avatar !== focused) drawAvatar(avatar, time, false);
 		if (focused) {
-			drawGiftAura(engine.focus, time);
+			drawSpotlight(moment, time);
+			if (moment.type === "gift") drawGiftAura(moment, time);
 			drawAvatar(focused, time, true);
 		}
 		drawEffects();
-		drawFocus(engine.focus, time);
+		ctx.restore();
+		if (moment?.type === "gift") {
+			if (width >= 700) drawFocus(moment, time);
+			if (moment.variant === "dj") soundFX.djBeat();
+		}
+		drawDjDeck(moment, time);
 
 		if (avatars.length !== lastCount) {
 			lastCount = avatars.length;
@@ -480,10 +641,9 @@
 			const i = Math.floor(Math.random() * names.length);
 			const user = { uniqueId: `demo_${i}`, nickname: names[i], profilePictureUrl: `https://i.pravatar.cc/100?img=${i + 10}` };
 			if (Math.random() < 0.32) {
-				const mega = Math.random() < 0.3;
-				const gift = { user, giftName: mega ? "Concert" : "Rose", giftValue: mega ? 199 : 1, repeatCount: 1 };
+				const giftChoice = Math.random();
+				const gift = giftChoice < 0.25 ? { user, giftName: "Bánh vòng", giftValue: 30, repeatCount: 1 } : giftChoice < 0.55 ? { user, giftName: "Bắn tim", giftValue: 5, repeatCount: 1 } : { user, giftName: "Hoa hồng", giftValue: 1, repeatCount: 1 };
 				engine.handleGift(gift);
-				soundFX.gift(giftTier(gift));
 			}
 			else if (Math.random() < 0.5) { engine.handleChat({ user, comment: ["xin chào mọi người", "nhảy đi", "quẩy lên nào", "hello host ❤️"][i % 4] }); soundFX.chat(); }
 			else { engine.handleLike({ user, likeCount: 5 }); soundFX.like(); }

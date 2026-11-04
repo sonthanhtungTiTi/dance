@@ -37,6 +37,14 @@
 
         <section class="panel">
           <div class="panel-title"><span>03</span><h2>Nhân vật</h2></div>
+          <label class="quality-row">Chất lượng overlay
+            <select id="renderQuality">
+              <option value="balanced">Ổn định · 30 FPS</option>
+              <option value="low">Máy yếu · 24 FPS</option>
+              <option value="high">Chất lượng cao · 60 FPS</option>
+            </select>
+            <small>Chọn xong, sao chép lại link và mở lại nguồn trong LIVE Studio.</small>
+          </label>
           <label class="range-row"><span>Kích thước <output id="scaleValue">100%</output></span><input id="avatarScale" type="range" min="0.55" max="1.8" step="0.05" value="1" /></label>
           <label class="range-row"><span>Tối đa <output id="limitValue">70</output></span><input id="avatarLimit" type="range" min="10" max="120" step="5" value="70" /></label>
           <button id="clearCrowd" class="danger">XÓA TOÀN BỘ NHÂN VẬT</button>
@@ -57,9 +65,9 @@
             <button data-test="chat">💬 CHAT</button>
             <button data-test="like">❤️ LIKE</button>
             <button data-test="share">📣 SHARE</button>
-            <button data-test="small-gift" class="gift-small">🌹 QUÀ NHỎ</button>
-            <button data-test="medium-gift" class="gift-medium">🎤 QUÀ VỪA</button>
-            <button data-test="mega-gift" class="gift-mega">🎸 QUÀ LỚN</button>
+            <button data-test="small-gift" class="gift-small">🌹 HOA HỒNG · 1 XU</button>
+            <button data-test="medium-gift" class="gift-medium">💝 BẮN TIM · 5 XU</button>
+            <button data-test="mega-gift" class="gift-mega">🎧 BÁNH VÒNG · 30 XU</button>
           </div>
         </section>
       </div>

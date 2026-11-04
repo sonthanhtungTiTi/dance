@@ -8,6 +8,8 @@
   </head>
   <body>
     <canvas id="stage" aria-label="TikTok virtual crowd overlay"></canvas>
+    <audio id="backgroundMusic" src="assets/audio/background.mp3" loop preload="auto" autoplay playsinline aria-label="Nhạc nền"></audio>
+    <audio id="helicopterAudio" src="assets/audio/helicopter-helicopter.mp3" preload="metadata" playsinline aria-label="Hiệu ứng helicopter"></audio>
 
     <div class="topbar">
       <div class="brand"><span>LIVE</span> VIRTUAL CROWD</div>
@@ -22,14 +24,18 @@
       <small>Chat, thả tim, chia sẻ hoặc tặng quà để cùng mở màn bùng nổ!</small>
     </section>
     <div id="hypeBanner" class="hype-banner" aria-live="polite">🔥 CẢ SÀN BÙNG NỔ! 🔥</div>
+    <div id="momentCaption" class="moment-caption" aria-live="polite"></div>
 
     <aside class="gift-guide">
-      <div class="guide-title">CÙNG QUẨY NÀO!</div>
-      <div><b>💬</b><span>CHAT</span><small>Hiện lời nhắn + tăng nhiệt</small></div>
-      <div><b>❤️</b><span>THẢ TIM</span><small>Tim bay + tăng nhiệt</small></div>
-      <div><b>📣</b><span>CHIA SẺ</span><small>Gọi bạn vào sàn</small></div>
-      <div><b>🎁</b><span>TẶNG QUÀ</span><small>Spotlight riêng + tăng nhiệt</small></div>
-      <div><b>🎆</b><span>QUÀ LỚN</span><small>Pháo hoa + hiệu ứng sân khấu</small></div>
+      <div class="guide-title">QUÀ TIKTOK</div>
+      <div class="gift-grid">
+        <div class="gift-tile"><img src="https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/eba3a9bb85c33e017f3648eaf88d7189~tplv-obj.webp" alt="" referrerpolicy="no-referrer" /><span class="gift-fallback" hidden>🌹</span><strong>Hoa hồng</strong><small>🪙 1</small></div>
+        <div class="gift-tile"><img src="https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/d56945782445b0b8c8658ed44f894c7b~tplv-resize:258:258.webp" alt="" referrerpolicy="no-referrer" /><span class="gift-fallback" hidden>🥰</span><strong>Tặng tim</strong><small>🪙 1</small></div>
+        <div class="gift-tile"><img src="https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/a4c4dc437fd3a6632aba149769491f49.png~tplv-obj.webp" alt="" referrerpolicy="no-referrer" /><span class="gift-fallback" hidden>🫰</span><strong>Bắn tim</strong><small>🪙 5</small></div>
+        <div class="gift-tile"><img src="https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/eb77ead5c3abb6da6034d3cf6cfeb438~tplv-obj.webp" alt="" referrerpolicy="no-referrer" /><span class="gift-fallback" hidden>🌹</span><strong>Rose</strong><small>🪙 10</small></div>
+        <div class="gift-tile"><img src="https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/4e7ad6bdf0a1d860c538f38026d4e812~tplv-obj.webp" alt="" referrerpolicy="no-referrer" /><span class="gift-fallback" hidden>🍩</span><strong>Bánh vòng</strong><small>🪙 30</small></div>
+      </div>
+      <div class="gift-guide-note">Quà khác vẫn tính theo số xu TikTok gửi về.</div>
     </aside>
 
     <div id="eventFeed" class="event-feed"></div>
