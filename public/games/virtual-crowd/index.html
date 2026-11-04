@@ -16,19 +16,27 @@
       <div id="viewerCount" class="count">0 NHÂN VẬT</div>
     </div>
 
+    <section class="party-meter" aria-label="Nhiệt sàn nhảy">
+      <div class="party-meter-heading"><strong>🔥 NHIỆT SÀN</strong><span id="heatValue">0%</span></div>
+      <div class="party-meter-track"><div id="heatFill"></div></div>
+      <small>Chat, thả tim, chia sẻ hoặc tặng quà để cùng mở màn bùng nổ!</small>
+    </section>
+    <div id="hypeBanner" class="hype-banner" aria-live="polite">🔥 CẢ SÀN BÙNG NỔ! 🔥</div>
+
     <aside class="gift-guide">
-      <div class="guide-title">TƯƠNG TÁC</div>
-      <div><b>💬</b><span>CHAT</span><small>Bong bóng thoại</small></div>
-      <div><b>❤️</b><span>THẢ TIM</span><small>Hiệu ứng tim</small></div>
-      <div><b>🎁</b><span>TẶNG QUÀ</span><small>Spotlight nhân vật</small></div>
-      <div><b>🎆</b><span>QUÀ LỚN</span><small>Pháo hoa sân khấu</small></div>
+      <div class="guide-title">CÙNG QUẨY NÀO!</div>
+      <div><b>💬</b><span>CHAT</span><small>Hiện lời nhắn + tăng nhiệt</small></div>
+      <div><b>❤️</b><span>THẢ TIM</span><small>Tim bay + tăng nhiệt</small></div>
+      <div><b>📣</b><span>CHIA SẺ</span><small>Gọi bạn vào sàn</small></div>
+      <div><b>🎁</b><span>TẶNG QUÀ</span><small>Spotlight riêng + tăng nhiệt</small></div>
+      <div><b>🎆</b><span>QUÀ LỚN</span><small>Pháo hoa + hiệu ứng sân khấu</small></div>
     </aside>
 
     <div id="eventFeed" class="event-feed"></div>
     <div id="emptyState" class="empty-state">
       <div class="empty-icon">🎭</div>
       <strong>Đang chờ khán giả vào LIVE...</strong>
-      <span>Mỗi viewer sẽ trở thành một nhân vật trên sân khấu</span>
+      <span>Chat hoặc thả tim để lên sàn và cùng tăng nhiệt!</span>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>

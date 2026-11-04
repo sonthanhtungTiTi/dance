@@ -13,6 +13,9 @@
 	const empty = document.getElementById("emptyState");
 	const guide = document.querySelector(".gift-guide");
 	const soundToggle = document.getElementById("soundToggle");
+	const heatValue = document.getElementById("heatValue");
+	const heatFill = document.getElementById("heatFill");
+	const hypeBanner = document.getElementById("hypeBanner");
 	const characterImages = config.characters.map((src) => {
 		const image = new Image();
 		image.src = src;
@@ -101,11 +104,7 @@
 		if (action === "settings") applyControlSettings(payload);
 		if (action === "test") runControlTest(payload?.type);
 		if (action === "clear") {
-			engine.avatars.clear();
-			engine.spawnQueue.length = 0;
-			engine.giftQueue.length = 0;
-			engine.effects.length = 0;
-			engine.focus = null;
+			engine.resetStage();
 		}
 	});
 
@@ -372,10 +371,11 @@
 		ctx.fillRect(0, 0, width, height);
 		ctx.restore();
 
-		const cardW = Math.min(width * 0.66, 520);
+		const compact = width < 700 || width / height < 0.75;
+		const cardW = compact ? Math.min(width * 0.45, 520) : Math.min(width * 0.66, 520);
 		const cardH = Math.max(72, height * 0.09);
 		const cardX = width / 2 - cardW / 2;
-		const cardY = height * 0.1;
+		const cardY = height * (compact ? 0.29 : 0.1);
 		ctx.save();
 		const tierColor = focus.tier === "mega" ? "#a855f7" : focus.tier === "medium" ? "#25f4ee" : "#fbbf24";
 		ctx.fillStyle = focus.tier === "mega" ? "rgba(28, 10, 43, .94)" : "rgba(25, 15, 7, .91)";
@@ -386,10 +386,10 @@
 		ctx.textAlign = "center";
 		ctx.font = `900 ${Math.max(18, cardH * 0.33)}px system-ui`;
 		ctx.fillStyle = "white";
-		ctx.fillText(`${focus.emoji} ${avatar.nickname}`, width / 2, cardY + cardH * 0.43);
+		ctx.fillText(`${focus.emoji} ${avatar.nickname}`, width / 2, cardY + cardH * 0.43, cardW - 20);
 		ctx.font = `800 ${Math.max(12, cardH * 0.2)}px system-ui`;
 		ctx.fillStyle = tierColor;
-		ctx.fillText(`${focus.giftName} ×${focus.count}  •  ${focus.value} 💎`, width / 2, cardY + cardH * 0.75);
+		ctx.fillText(`${focus.giftName} ×${focus.count}  •  ${focus.value} 💎`, width / 2, cardY + cardH * 0.75, cardW - 20);
 		if (engine.giftQueue.length) {
 			ctx.font = `700 ${Math.max(10, cardH * 0.15)}px system-ui`;
 			ctx.fillStyle = "#cbd5e1";
@@ -440,6 +440,12 @@
 		const dt = Math.min(0.04, (time - lastFrame) / 1000);
 		lastFrame = time;
 		engine.tick(dt);
+		const heat = Math.round(engine.heat);
+		if (heatValue.textContent !== `${heat}%`) {
+			heatValue.textContent = `${heat}%`;
+			heatFill.style.width = `${heat}%`;
+		}
+		hypeBanner.classList.toggle("visible", engine.hypeUntil > performance.now());
 		ctx.clearRect(0, 0, width, height);
 		drawBackground(time);
 		const focused = engine.focus?.avatar;
