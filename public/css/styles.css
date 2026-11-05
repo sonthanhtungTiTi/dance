@@ -289,6 +289,92 @@ body {
 }
 
 /* ==========================================
+   TIKTOK CONNECTION STATUS
+   ========================================== */
+.connection-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: -8px 0 24px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-normal);
+}
+
+.connection-status-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.04);
+}
+
+.connection-status-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.connection-status-label {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.connection-status-detail {
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+.connection-status-account {
+  padding: 6px 10px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  font-family: "Fira Code", monospace;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.connection-status.connecting,
+.connection-status.reconnecting {
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+.connection-status.connecting .connection-status-dot,
+.connection-status.reconnecting .connection-status-dot {
+  background: var(--accent-blue);
+  box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.12);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+.connection-status.connected {
+  background: rgba(37, 244, 238, 0.06);
+  border-color: rgba(37, 244, 238, 0.45);
+}
+
+.connection-status.connected .connection-status-dot {
+  background: var(--accent-cyan);
+  box-shadow: 0 0 0 5px rgba(37, 244, 238, 0.12);
+}
+
+.connection-status.error,
+.connection-status.disconnected {
+  background: rgba(254, 44, 85, 0.05);
+  border-color: rgba(254, 44, 85, 0.45);
+}
+
+.connection-status.error .connection-status-dot,
+.connection-status.disconnected .connection-status-dot {
+  background: var(--accent-pink);
+  box-shadow: 0 0 0 5px rgba(254, 44, 85, 0.12);
+}
+
+/* ==========================================
    BUTTONS
    ========================================== */
 .btn {
@@ -546,6 +632,15 @@ body {
 
   .output-wrapper {
     flex-direction: column;
+  }
+
+  .connection-status {
+    grid-template-columns: auto 1fr;
+  }
+
+  .connection-status-account {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .btn {

@@ -66,9 +66,23 @@
             type="text"
             id="username"
             class="form-input"
+            value=""
             placeholder="Ex: streamer_vn (no @ needed)"
             autocomplete="off"
+            autocapitalize="none"
+            spellcheck="false"
           />
+        </div>
+
+        <div class="connection-status idle" id="connectionStatus" role="status" aria-live="polite">
+          <span class="connection-status-dot" aria-hidden="true"></span>
+          <div class="connection-status-copy">
+            <span class="connection-status-label" id="connectionStatusLabel">Not connected</span>
+            <span class="connection-status-detail" id="connectionStatusDetail">
+              Enter a TikTok username, then generate a link to check the Live connection.
+            </span>
+          </div>
+          <span class="connection-status-account" id="connectionStatusAccount">No account</span>
         </div>
 
         <!-- Step 2: Select Game -->
@@ -172,6 +186,7 @@
     <div class="toast" id="toast">✅ Link copied!</div>
 
     <!-- Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
     <script src="/js/dashboard.js"></script>
   </body>
 </html>

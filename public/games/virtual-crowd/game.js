@@ -93,6 +93,7 @@
 	let dpr = 1;
 	let lastFrame = performance.now();
 	let lastCount = -1;
+	let djAnnouncement = null;
 
 	function resize() {
 		width = window.innerWidth;
@@ -141,7 +142,7 @@
 		status.className = "status connected";
 	});
 	TikTokBridge.on("reconnecting", () => {
-		status.textContent = "ĐANG KẾT NỐI LẠI";
+		status.textContent = "ĐANG CHỜ TIKTOK LIVE";
 		status.className = "status waiting";
 	});
 	TikTokBridge.on("disconnected", () => {
@@ -271,18 +272,105 @@
 		}
 	}
 
-	function drawAvatar(avatar, time, isFocused) {
-		const depth = Math.max(0, Math.min(1, (avatar.y - 0.57) / 0.38));
+	function getDjPlacements(leaderboard) {
+		const compact = width < 700 || width / height < 0.8;
+		const slots = compact
+			? [
+				{ x: 0.5, y: 0.42, scale: 1.28 },
+				{ x: 0.25, y: 0.51, scale: 0.98 },
+				{ x: 0.75, y: 0.51, scale: 0.98 },
+				{ x: 0.15, y: 0.62, scale: 0.83 },
+				{ x: 0.85, y: 0.62, scale: 0.83 },
+			]
+			: [
+				{ x: 0.5, y: 0.48, scale: 1.32 },
+				{ x: 0.31, y: 0.53, scale: 1.02 },
+				{ x: 0.69, y: 0.53, scale: 1.02 },
+				{ x: 0.15, y: 0.59, scale: 0.86 },
+				{ x: 0.85, y: 0.59, scale: 0.86 },
+			];
+		return new Map(leaderboard.map((supporter, index) => [
+			supporter.avatar.key,
+			{ ...slots[index], rank: supporter.rank, role: supporter.role, total: supporter.total },
+		]));
+	}
+
+	function drawDjStage(placements, time) {
+		if (!placements.size) return;
+		const pulse = 0.65 + Math.sin(time * 0.008) * 0.2;
+		ctx.save();
+		for (const placement of placements.values()) {
+			const x = placement.x * width;
+			const y = placement.y * height;
+			const podiumW = Math.max(54, Math.min(width * 0.19, 150) * placement.scale);
+			const podiumH = Math.max(20, height * 0.034);
+			const rankColors = ["#ffd84d", "#25f4ee", "#fe2c55", "#a855f7", "#60a5fa"];
+			const color = rankColors[placement.rank - 1];
+			const gradient = ctx.createLinearGradient(x, y, x, y + podiumH);
+			gradient.addColorStop(0, "rgba(22, 16, 42, .98)");
+			gradient.addColorStop(1, "rgba(4, 6, 18, .98)");
+			ctx.fillStyle = gradient;
+			ctx.strokeStyle = color;
+			ctx.shadowColor = color;
+			ctx.shadowBlur = 12 + pulse * 12;
+			ctx.lineWidth = placement.rank === 1 ? 3 : 2;
+			roundedRect(x - podiumW / 2, y - 4, podiumW, podiumH, 9);
+			ctx.fill();
+			ctx.stroke();
+			ctx.globalAlpha = pulse;
+			ctx.beginPath();
+			ctx.ellipse(x, y - 5, podiumW * 0.43, podiumH * 0.38, 0, 0, Math.PI * 2);
+			ctx.stroke();
+			ctx.globalAlpha = 1;
+		}
+		ctx.restore();
+	}
+
+	function drawDjWings(size, rank, time) {
+		const colors = ["#fff2a8", "#9ffcff", "#ff9ec4", "#d8b4fe", "#93c5fd"];
+		const color = colors[rank - 1] || colors.at(-1);
+		const flap = 0.92 + Math.sin(time * 0.012 + rank) * 0.09;
+		const wingScale = (rank === 1 ? 1.38 : 1.02) * flap;
+		ctx.save();
+		ctx.globalCompositeOperation = "screen";
+		ctx.strokeStyle = color;
+		ctx.fillStyle = `${color}40`;
+		ctx.shadowColor = color;
+		ctx.shadowBlur = rank === 1 ? 28 : 17;
+		ctx.lineWidth = Math.max(2, size * 0.035);
+		for (const side of [-1, 1]) {
+			ctx.save();
+			ctx.scale(side * wingScale, wingScale);
+			for (let feather = 0; feather < 4; feather += 1) {
+				const rise = size * (0.28 + feather * 0.13);
+				const reach = size * (0.58 + feather * 0.12);
+				ctx.beginPath();
+				ctx.moveTo(size * 0.05, -size * 0.58);
+				ctx.quadraticCurveTo(reach * 0.55, -size * 0.98 - rise * 0.2, reach, -size * 0.55 - rise);
+				ctx.quadraticCurveTo(reach * 0.72, -size * 0.25 - rise * 0.18, size * 0.12, -size * 0.2);
+				ctx.closePath();
+				ctx.fill();
+				ctx.stroke();
+			}
+			ctx.restore();
+		}
+		ctx.restore();
+	}
+
+	function drawAvatar(avatar, time, isFocused, placement = null) {
+		const positionX = placement?.x ?? avatar.x;
+		const positionY = placement?.y ?? avatar.y;
+		const depth = Math.max(0, Math.min(1, (positionY - 0.57) / 0.38));
 		const baseSize = Math.max(52, Math.min(width, height) * (0.085 + depth * 0.045));
 		const focusScale = isFocused ? 1.22 : 1;
 		const ageScale = Math.min(1, (time - avatar.spawnedAt) / 280);
-		const size = baseSize * focusScale * Math.max(0, ageScale) * runtime.avatarScale;
-		const x = avatar.x * width;
+		const size = baseSize * focusScale * Math.max(0, ageScale) * runtime.avatarScale * (placement?.scale || 1);
+		const x = positionX * width;
 		const fallProgress = Math.max(0, (time - avatar.spawnedAt) / 850);
-		const falling = avatar.spawnSource === "member" && fallProgress < 1;
+		const falling = !placement && avatar.spawnSource === "member" && fallProgress < 1;
 		const fallOffset = falling ? -((1 - fallProgress) ** 2) * height * 0.85 : 0;
-		const landingBounce = avatar.spawnSource === "member" && fallProgress >= 1 && fallProgress < 1.3 ? Math.sin((fallProgress - 1) * Math.PI / 0.3) * size * 0.08 : 0;
-		const groundY = avatar.y * height + fallOffset - landingBounce;
+		const landingBounce = !placement && avatar.spawnSource === "member" && fallProgress >= 1 && fallProgress < 1.3 ? Math.sin((fallProgress - 1) * Math.PI / 0.3) * size * 0.08 : 0;
+		const groundY = positionY * height + fallOffset - landingBounce;
 		const dancePhase = time * 0.0075 + avatar.phase;
 		let bob = Math.sin(dancePhase * 2) * size * 0.025;
 		let danceX = 0;
@@ -323,6 +411,7 @@
 		ctx.shadowColor = isFocused ? "#fbbf24" : "#000";
 		ctx.shadowBlur = isFocused ? 28 : 12;
 		ctx.globalAlpha = Math.min(1, ageScale);
+		if (placement) drawDjWings(size, placement.rank, time);
 
 		ctx.fillStyle = "rgba(0,0,0,.35)";
 		ctx.beginPath();
@@ -360,15 +449,18 @@
 		ctx.fill();
 		ctx.fillStyle = "white";
 		ctx.fillText(label, renderX, groundY + size * 0.235);
-		if (avatar.hostBadge) {
+		if (placement) {
 			const badgeY = groundY + size * 0.55;
-			const badgeW = Math.max(62, size * 0.85);
-			ctx.fillStyle = "rgba(87, 50, 4, .94)";
+			const badgeW = Math.max(84, size * 1.28);
+			const rankColors = ["#ffe66d", "#25f4ee", "#fe7aa1", "#c4a1ff", "#93c5fd"];
+			ctx.fillStyle = "rgba(20, 9, 36, .95)";
+			ctx.strokeStyle = rankColors[placement.rank - 1];
+			ctx.lineWidth = 2;
 			roundedRect(renderX - badgeW / 2, badgeY - 12, badgeW, 20, 8);
-			ctx.fill();
-			ctx.fillStyle = "#ffe38a";
+			ctx.fill(); ctx.stroke();
+			ctx.fillStyle = rankColors[placement.rank - 1];
 			ctx.font = `800 ${Math.max(10, size * 0.15)}px system-ui`;
-			ctx.fillText("👑 CHỦ NHÀ", renderX, badgeY + 2, badgeW - 6);
+			ctx.fillText(`${placement.rank === 1 ? "👑" : "🎧"} ${placement.role} • ${placement.total}💎`, renderX, badgeY + 2, badgeW - 6);
 		}
 		ctx.restore();
 
@@ -405,10 +497,10 @@
 		return lines.slice(0, 3);
 	}
 
-	function drawGiftAura(focus, time) {
+	function drawGiftAura(focus, time, placement = null) {
 		if (!focus) return;
-		const x = focus.avatar.x * width;
-		const y = focus.avatar.y * height;
+		const x = (placement?.x ?? focus.avatar.x) * width;
+		const y = (placement?.y ?? focus.avatar.y) * height;
 		const radius = Math.min(width, height) * (focus.tier === "mega" ? 0.18 : 0.11);
 		ctx.save();
 		ctx.translate(x, y - radius * 0.35);
@@ -431,10 +523,10 @@
 		ctx.restore();
 	}
 
-	function drawSpotlight(moment, time) {
+	function drawSpotlight(moment, time, placement = null) {
 		if (!moment || (moment.type === "gift" && moment.tier === "small")) return;
-		const x = moment.avatar.x * width;
-		const y = moment.avatar.y * height;
+		const x = (placement?.x ?? moment.avatar.x) * width;
+		const y = (placement?.y ?? moment.avatar.y) * height;
 		ctx.save();
 		ctx.globalCompositeOperation = "screen";
 		const color = moment.type === "gift" && moment.tier === "mega" ? "168, 85, 247" : "255, 225, 130";
@@ -454,43 +546,11 @@
 		ctx.restore();
 	}
 
-	function drawDjDeck(moment, time) {
-		if (moment?.variant !== "dj") return;
-		const deckW = Math.min(width * 0.52, 260);
-		const deckH = Math.min(height * 0.095, 68);
-		const x = width / 2 - deckW / 2;
-		const y = height * 0.83;
-		ctx.save();
-		ctx.fillStyle = "rgba(10, 9, 24, .94)";
-		ctx.strokeStyle = "#a855f7";
-		ctx.lineWidth = 2;
-		roundedRect(x, y, deckW, deckH, 12);
-		ctx.fill(); ctx.stroke();
-		for (const side of [-1, 1]) {
-			const centerX = width / 2 + side * deckW * 0.31;
-			ctx.strokeStyle = "#25f4ee";
-			ctx.lineWidth = 3;
-			ctx.beginPath();
-			ctx.arc(centerX, y + deckH / 2, deckH * 0.3, 0, Math.PI * 2);
-			ctx.stroke();
-			ctx.fillStyle = "#fe2c55";
-			ctx.beginPath();
-			ctx.arc(centerX + Math.cos(time * 0.014) * deckH * 0.2, y + deckH / 2 + Math.sin(time * 0.014) * deckH * 0.2, 3, 0, Math.PI * 2);
-			ctx.fill();
-		}
-		for (let i = 0; i < 5; i += 1) {
-			const barH = 8 + Math.abs(Math.sin(time * 0.012 + i * 1.7)) * deckH * 0.48;
-			ctx.fillStyle = i % 2 ? "#fbbf24" : "#a855f7";
-			ctx.fillRect(width / 2 - 19 + i * 8, y + deckH - barH - 8, 5, barH);
-		}
-		ctx.restore();
-	}
-
-	function drawFocus(focus, time) {
+	function drawFocus(focus, time, placement = null) {
 		if (!focus) return;
 		const avatar = focus.avatar;
-		const x = avatar.x * width;
-		const y = avatar.y * height;
+		const x = (placement?.x ?? avatar.x) * width;
+		const y = (placement?.y ?? avatar.y) * height;
 		ctx.save();
 		ctx.globalCompositeOperation = "screen";
 		const glow = ctx.createRadialGradient(x, y, 0, x, y, Math.min(width, height) * 0.35);
@@ -527,22 +587,25 @@
 		ctx.restore();
 	}
 
-	function drawEffects() {
+	function drawEffects(placements) {
 		for (const effect of engine.effects) {
+			const placement = effect.anchorKey ? placements.get(effect.anchorKey) : null;
+			const effectX = placement ? placement.x + effect.x - effect.anchorX : effect.x;
+			const effectY = placement ? placement.y + effect.y - effect.anchorY : effect.y;
 			ctx.save();
 			ctx.globalAlpha = Math.max(0, effect.life);
 			if (effect.delay > 0) { ctx.restore(); continue; }
 			if (effect.type === "float") {
 				ctx.font = `${effect.size}px serif`;
 				ctx.textAlign = "center";
-				ctx.fillText(effect.symbol, effect.x * width, effect.y * height);
+				ctx.fillText(effect.symbol, effectX * width, effectY * height);
 			} else if (effect.type === "ring") {
 				ctx.strokeStyle = effect.color;
 				ctx.shadowColor = effect.color;
 				ctx.shadowBlur = 12;
 				ctx.lineWidth = 4 * effect.life;
 				ctx.beginPath();
-				ctx.ellipse(effect.x * width, effect.y * height, (1 - effect.life) * width * 0.11, (1 - effect.life) * height * 0.035, 0, 0, Math.PI * 2);
+				ctx.ellipse(effectX * width, effectY * height, (1 - effect.life) * width * 0.11, (1 - effect.life) * height * 0.035, 0, 0, Math.PI * 2);
 				ctx.stroke();
 			} else if (effect.type === "pyro") {
 				ctx.strokeStyle = effect.color;
@@ -550,19 +613,50 @@
 				ctx.shadowBlur = 12;
 				ctx.lineWidth = 2.5;
 				ctx.beginPath();
-				ctx.moveTo(effect.x * width, effect.y * height);
-				ctx.lineTo((effect.x - effect.vx * 0.1) * width, (effect.y - effect.vy * 0.1) * height);
+				ctx.moveTo(effectX * width, effectY * height);
+				ctx.lineTo((effectX - effect.vx * 0.1) * width, (effectY - effect.vy * 0.1) * height);
 				ctx.stroke();
 			} else {
 				ctx.fillStyle = effect.color;
 				ctx.shadowColor = effect.color;
 				ctx.shadowBlur = 10;
 				ctx.beginPath();
-				ctx.arc(effect.x * width, effect.y * height, 2.5, 0, Math.PI * 2);
+				ctx.arc(effectX * width, effectY * height, 2.5, 0, Math.PI * 2);
 				ctx.fill();
 			}
 			ctx.restore();
 		}
+	}
+
+	function drawDjAnnouncement(time) {
+		if (!djAnnouncement || time >= djAnnouncement.until) return;
+		const age = time - djAnnouncement.startedAt;
+		const remaining = djAnnouncement.until - time;
+		const enter = Math.min(1, age / 260);
+		const leave = Math.min(1, remaining / 350);
+		const scale = Math.min(enter, leave);
+		const wobble = Math.sin(time * 0.02) * 0.025;
+		const boxW = Math.min(width * 0.9, 760);
+		const boxH = Math.max(62, height * 0.075);
+		const x = width / 2;
+		const y = height * 0.18;
+		ctx.save();
+		ctx.translate(x, y);
+		ctx.rotate(wobble);
+		ctx.scale(scale, scale);
+		ctx.fillStyle = "rgba(40, 8, 48, .94)";
+		ctx.strokeStyle = "#ffe66d";
+		ctx.shadowColor = "#fe2c55";
+		ctx.shadowBlur = 30;
+		ctx.lineWidth = 3;
+		roundedRect(-boxW / 2, -boxH / 2, boxW, boxH, 18);
+		ctx.fill(); ctx.stroke();
+		ctx.fillStyle = "white";
+		ctx.textAlign = "center";
+		ctx.textBaseline = "middle";
+		ctx.font = `900 ${Math.max(16, Math.min(30, boxH * 0.35))}px system-ui`;
+		ctx.fillText(djAnnouncement.text, 0, 0, boxW - 24);
+		ctx.restore();
 	}
 
 	function frame(time) {
@@ -577,6 +671,14 @@
 			if (announcement.type === "gift" && announcement.variant === "helicopter") playHelicopter();
 			else if (announcement.type === "gift") soundFX.gift(announcement.tier);
 			if (announcement.variant === "dj") soundFX.djBeat();
+		}
+		for (const event of engine.djEvents.splice(0)) {
+			const text = event.text || `💨 ${event.avatar.nickname} rớt khỏi bàn DJ, xuống sàn quẩy tiếp!`;
+			addFeed(text, "gift");
+			if (event.type === "takeover" || event.type === "joined") {
+				djAnnouncement = { text, startedAt: time, until: time + 3600 };
+				soundFX.djBeat();
+			}
 		}
 		const heat = Math.round(engine.heat / engine.heatTarget * 100);
 		if (heatValue.textContent !== `${heat}%`) {
@@ -593,6 +695,9 @@
 		drawBackground(time);
 		const focused = moment?.avatar;
 		const avatars = [...engine.avatars.values()].sort((a, b) => a.y - b.y);
+		const djLeaderboard = engine.getDjLeaderboard();
+		const djPlacements = getDjPlacements(djLeaderboard);
+		const focusedPlacement = focused ? djPlacements.get(focused.key) : null;
 		ctx.save();
 		if (focused) {
 			const age = Math.max(0, time - (moment.startedAt || time));
@@ -603,21 +708,32 @@
 			zoom = 1 + (zoom - 1) * easeOut;
 			ctx.translate(width / 2, height * 0.68);
 			ctx.scale(zoom, zoom);
-			ctx.translate(-focused.x * width, -focused.y * height);
+			ctx.translate(
+				-(focusedPlacement?.x ?? focused.x) * width,
+				-(focusedPlacement?.y ?? focused.y) * height,
+			);
 		}
-		for (const avatar of avatars) if (avatar !== focused) drawAvatar(avatar, time, false);
+		drawDjStage(djPlacements, time);
+		for (const avatar of avatars) {
+			if (avatar !== focused && !djPlacements.has(avatar.key)) drawAvatar(avatar, time, false);
+		}
+		for (const supporter of djLeaderboard) {
+			if (supporter.avatar !== focused) {
+				drawAvatar(supporter.avatar, time, false, djPlacements.get(supporter.avatar.key));
+			}
+		}
 		if (focused) {
-			drawSpotlight(moment, time);
-			if (moment.type === "gift") drawGiftAura(moment, time);
-			drawAvatar(focused, time, true);
+			drawSpotlight(moment, time, focusedPlacement);
+			if (moment.type === "gift") drawGiftAura(moment, time, focusedPlacement);
+			drawAvatar(focused, time, true, focusedPlacement);
 		}
-		drawEffects();
+		drawEffects(djPlacements);
 		ctx.restore();
 		if (moment?.type === "gift") {
-			if (width >= 700) drawFocus(moment, time);
+			if (width >= 700) drawFocus(moment, time, focusedPlacement);
 			if (moment.variant === "dj") soundFX.djBeat();
 		}
-		drawDjDeck(moment, time);
+		drawDjAnnouncement(time);
 
 		if (avatars.length !== lastCount) {
 			lastCount = avatars.length;

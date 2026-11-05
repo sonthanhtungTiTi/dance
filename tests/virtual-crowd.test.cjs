@@ -62,15 +62,62 @@ test('member arrival after a chat-created avatar still triggers one welcome', ()
   assert.equal(engine.welcomeQueue.length, 1);
 });
 
-test('gift effects use the price of one gift and >5 coin gifts grant the badge', () => {
-  for (const [price, tier, duration, badge] of [[1, 'small', 2700, false], [5, 'medium', 3000, false], [30, 'mega', 6600, true]]) {
+test('chat zoom follows the commenter when the stage has only a few viewers', () => {
+  const { engine } = setup();
+  for (let i = 0; i < 3; i += 1) engine.spawn(user(`viewer${i}`));
+  engine.handleChat({ user: user('viewer1'), comment: 'xin chào' });
+  engine.tick(0.016);
+  assert.equal(engine.moment.type, 'chat');
+  assert.equal(engine.moment.avatar.nickname, 'viewer1');
+  assert.match(engine.moment.text, /viewer1: xin chào/);
+  assert.equal(engine.moment.avatar.action, 'dance');
+  assert.ok(engine.effects.length > 300);
+  assert.ok(engine.effects.length <= 480);
+});
+
+test('chat zoom still follows the commenter when the room is busy', () => {
+  const { engine } = setup(0.75);
+  for (let i = 0; i < 6; i += 1) engine.spawn(user(`viewer${i}`));
+  engine.handleChat({ user: user('viewer0'), comment: 'hello' });
+  engine.tick(0.016);
+  assert.equal(engine.moment.type, 'chat');
+  assert.equal(engine.moment.avatar.nickname, 'viewer0');
+  assert.match(engine.moment.text, /viewer0: hello/);
+});
+
+test('gift effects use the price of one gift and every giver can claim the DJ chair', () => {
+  for (const [price, tier, duration] of [[1, 'small', 2700], [5, 'medium', 3000], [30, 'mega', 6600]]) {
     const { engine } = setup();
     engine.handleGift({ user: user('gifter'), giftName: 'Gift', giftValue: price, repeatCount: 1 });
     assert.equal(engine.focus.tier, tier);
     assert.equal(engine.focus.duration, duration);
-    assert.equal(engine.focus.avatar.hostBadge, badge);
+    assert.equal(engine.focus.avatar.hostBadge, true);
+    assert.equal(engine.focus.avatar.djRank, 1);
+    assert.equal(engine.focus.avatar.djRole, 'CHỦ TỊCH');
     assert.equal(engine.announcements.at(-1).type, 'gift');
   }
+});
+
+test('DJ leaderboard keeps the five biggest supporters and evicts sixth place', () => {
+  const { engine, advance } = setup();
+  for (let i = 0; i < 6; i += 1) {
+    engine.handleGift({ user: user(`giver${i}`), giftName: `Gift ${i}`, giftValue: i + 1, repeatCount: 1 });
+    advance(1);
+  }
+  const leaders = engine.getDjLeaderboard();
+  assert.deepEqual(Array.from(leaders, (entry) => entry.avatar.nickname), ['giver5', 'giver4', 'giver3', 'giver2', 'giver1']);
+  assert.equal(engine.avatars.get('giver5').djRank, 1);
+  assert.equal(engine.avatars.get('giver0').djRank, null);
+  assert.ok(engine.djEvents.some((event) => event.type === 'evicted' && event.avatar.nickname === 'giver0'));
+});
+
+test('gift streak totals count only newly added combo gifts', () => {
+  const { engine } = setup();
+  const gift = { user: user('combo'), giftId: 7, giftName: 'Rose', giftValue: 1, repeatCount: 1 };
+  engine.handleGift(gift);
+  engine.handleGift({ ...gift, repeatCount: 2 });
+  engine.handleGift({ ...gift, repeatCount: 2 });
+  assert.equal(engine.getDjLeaderboard()[0].total, 2);
 });
 
 test('high-value gift randomly chooses DJ or helicopter and helicopter ends with the audio', () => {

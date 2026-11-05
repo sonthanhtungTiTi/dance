@@ -116,6 +116,13 @@ io.on("connection", (socket) => {
 			});
 		}
 
+    // If this account is already waiting to go Live, join the existing retry loop.
+    const reconnectStatus = tiktokService.getReconnectStatus(normalizedUsername);
+    if (reconnectStatus) {
+      socket.emit("tiktok_reconnecting", reconnectStatus);
+      return;
+    }
+
     // Connect to TikTok Live (reuses existing connection if available)
     try {
       const connected = await tiktokService.connect(normalizedUsername, io);
@@ -125,9 +132,9 @@ io.on("connection", (socket) => {
           message: `Joined room: ${normalizedUsername}`,
         });
       } else {
-        socket.emit("connection-error", {
-          message: tiktokService.getLastError(normalizedUsername) || `Cannot connect to ${normalizedUsername}'s live. Make sure they are currently streaming!`,
-        });
+        // Not Live yet is a waiting state, not a terminal error. Keep retrying
+        // while this dashboard/overlay client remains in the room.
+        tiktokService.waitForLive(normalizedUsername, io);
       }
     } catch (error) {
       console.error(`[Socket] Error connecting to TikTok: ${error.message}`);

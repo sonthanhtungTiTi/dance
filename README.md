@@ -131,7 +131,7 @@ TikTokService (Singleton)
 - **Singleton Pattern**: Single `TikTokService` instance manages all connections
 - **Connection Reuse**: Existing connections are reused, not recreated
 - **Auto-disconnect**: Connections close after 5 minutes with 0 clients
-- **Auto-reconnect**: Exponential backoff (2s → 4s → 8s → 16s → 32s) with ±30% jitter, max 5 attempts
+- **Wait for Live + auto-reconnect**: If the account is not Live yet, the server keeps retrying with exponential backoff (capped at 15s, ±30% jitter) while a dashboard/overlay client is open. Going Live later reconnects automatically without restarting the backend.
 
 ## API Reference
 

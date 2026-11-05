@@ -22,7 +22,7 @@ import {
 	normalizeShare,
 	normalizeUser,
 } from "../lib/tiktokEventNormalizer.js";
-import { getDelay, shouldRetry, sleep } from "../lib/tiktokReconnectPolicy.js";
+import { getDelay, sleep } from "../lib/tiktokReconnectPolicy.js";
 
 class TikTokService {
 	constructor() {
@@ -34,7 +34,7 @@ class TikTokService {
 
 		/**
 		 * Map storing active TikTok connections
-		 * @type {Map<string, {connection: WebcastPushConnection, lastActivity: number}>}
+		 * @type {Map<string, {connection: WebcastPushConnection, lastActivity: number, ready: Promise<boolean>|null}>}
 		 */
 		this.connections = new Map();
 
@@ -46,7 +46,7 @@ class TikTokService {
 
 		/**
 		 * Track reconnect state per username to avoid overlapping retries
-		 * @type {Map<string, {attempting: boolean, attempt: number}>}
+		 * @type {Map<string, {attempting: boolean, attempt: number, delayMs: number, nextRetryAt: number, token: symbol}>}
 		 */
 		this.reconnectState = new Map();
 		this.lastErrors = new Map();
@@ -75,11 +75,17 @@ class TikTokService {
 			);
 			const existing = this.connections.get(username);
 			existing.lastActivity = Date.now();
+			if (existing.ready) return existing.ready;
 			return true;
 		}
 
 		console.log(`[TikTokService] Creating new connection for: ${username}`);
 		console.log(`[TikTokService] Euler sign key: ${process.env.EULER_SIGN_API_KEY ? "configured" : "missing"}`);
+
+		let resolveReady;
+		const ready = new Promise((resolve) => {
+			resolveReady = resolve;
+		});
 
 		try {
 			// Create new TikTok Live connection
@@ -93,10 +99,8 @@ class TikTokService {
 			this.connections.set(username, {
 				connection: connection,
 				lastActivity: Date.now(),
+				ready,
 			});
-
-			// Reset reconnect state on fresh connect
-			this.reconnectState.delete(username);
 
 			// ==========================================
 			// TIKTOK EVENT HANDLERS
@@ -168,7 +172,7 @@ class TikTokService {
 				// Auto-reconnect if there are still clients in the room
 				const clientCount = this.getClientCount(username);
 				if (clientCount > 0 && !this.isShuttingDown) {
-					this._scheduleReconnect(username, io);
+					this.waitForLive(username, io);
 				}
 			});
 
@@ -182,9 +186,14 @@ class TikTokService {
 
 			// Establish connection
 			await connection.connect();
+			const active = this.connections.get(username);
+			if (active?.connection === connection) active.ready = null;
+			resolveReady(true);
 			this.lastErrors.delete(username);
+			this.reconnectState.delete(username);
 			return true;
 		} catch (error) {
+			resolveReady(false);
 			const message = error?.message || String(error || "Unknown TikTok connection error");
 			console.error(
 				`[TikTokService] Cannot connect to ${username}:`,
@@ -198,6 +207,7 @@ class TikTokService {
 
 	/**
 	 * Schedule auto-reconnect with exponential backoff.
+	 * Retries indefinitely while at least one dashboard/overlay client is waiting.
 	 * Skips if a reconnect loop is already running for this username.
 	 *
 	 * @param {string} username
@@ -210,15 +220,26 @@ class TikTokService {
 		if (state?.attempting) return;
 
 		let attempt = 0;
-		this.reconnectState.set(username, { attempting: true, attempt });
+		const token = Symbol(username);
+		this.reconnectState.set(username, {
+			attempting: true,
+			attempt,
+			delayMs: 0,
+			nextRetryAt: Date.now(),
+			token,
+		});
 
-		while (shouldRetry(attempt)) {
+		while (!this.isShuttingDown) {
+			// A deleted/replaced token cancels this particular retry loop.
+			if (this.reconnectState.get(username)?.token !== token) return;
+
 			// Bail if no clients remain (nobody watching → no point reconnecting)
 			if (this.getClientCount(username) === 0) {
 				console.log(
 					`[TikTokService] Reconnect aborted for ${username}: 0 clients`,
 				);
-				break;
+				this.reconnectState.delete(username);
+				return;
 			}
 
 			// Bail if connection was re-established elsewhere
@@ -226,10 +247,19 @@ class TikTokService {
 				console.log(
 					`[TikTokService] Reconnect aborted for ${username}: already connected`,
 				);
-				break;
+				this.reconnectState.delete(username);
+				return;
 			}
 
-			const delay = getDelay(attempt);
+			const delay = getDelay(attempt, { maxDelayMs: 15_000 });
+			const retryState = {
+				attempting: true,
+				attempt: attempt + 1,
+				delayMs: delay,
+				nextRetryAt: Date.now() + delay,
+				token,
+			};
+			this.reconnectState.set(username, retryState);
 			console.log(
 				`[TikTokService] Reconnect attempt ${attempt + 1} for ${username} in ${delay}ms`,
 			);
@@ -240,28 +270,54 @@ class TikTokService {
 			});
 
 			await sleep(delay);
+			if (
+				this.isShuttingDown ||
+				this.reconnectState.get(username)?.token !== token
+			) {
+				return;
+			}
 
 			const ok = await this.connect(username, io);
 			if (ok) {
 				console.log(
 					`[TikTokService] Reconnected to ${username} on attempt ${attempt + 1}`,
 				);
-				this.reconnectState.delete(username);
+				io.to(username).emit("room-joined", {
+					room: username,
+					message: `TikTok Live is now available: ${username}`,
+				});
 				return;
 			}
 
 			attempt++;
-			this.reconnectState.set(username, { attempting: true, attempt });
 		}
 
-		console.error(
-			`[TikTokService] Reconnect failed for ${username} after ${attempt} attempts`,
-		);
-		io.to(username).emit("tiktok_error", {
-			message: `Reconnect failed after ${attempt} attempts. Streamer may have ended the live.`,
-			timestamp: Date.now(),
+		if (this.reconnectState.get(username)?.token === token) {
+			this.reconnectState.delete(username);
+		}
+	}
+
+	/** Start waiting for a TikTok account to go Live without duplicating loops. */
+	waitForLive(username, io) {
+		void this._scheduleReconnect(username, io).catch((error) => {
+			console.error(`[TikTokService] Retry loop failed for ${username}:`, error);
+			this.reconnectState.delete(username);
+			io.to(username).emit("tiktok_error", {
+				message: error?.message || "TikTok reconnect loop failed",
+				timestamp: Date.now(),
+			});
 		});
-		this.reconnectState.delete(username);
+	}
+
+	/** Return retry information safe to send to a newly joined client. */
+	getReconnectStatus(username) {
+		const state = this.reconnectState.get(username);
+		if (!state?.attempting) return null;
+		return {
+			attempt: state.attempt,
+			delayMs: Math.max(0, state.nextRetryAt - Date.now()),
+			timestamp: Date.now(),
+		};
 	}
 
 	/**

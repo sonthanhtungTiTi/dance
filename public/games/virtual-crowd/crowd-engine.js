@@ -12,9 +12,12 @@ class CrowdEngine {
 		this.pendingHype = null;
 		this.heatCooldowns = new Map();
 		this.giftStreaks = new Map();
+		this.giftSupporters = new Map();
+		this.djEvents = [];
 		this.heatTarget = 50;
 		this.moment = null;
 		this.welcomeQueue = [];
+		this.chatFocusQueue = [];
 		this.announcements = [];
 	}
 
@@ -61,8 +64,11 @@ class CrowdEngine {
 		this.pendingHype = null;
 		this.heatCooldowns.clear();
 		this.giftStreaks.clear();
+		this.giftSupporters.clear();
+		this.djEvents.length = 0;
 		this.moment = null;
 		this.welcomeQueue.length = 0;
+		this.chatFocusQueue.length = 0;
 		this.announcements.length = 0;
 	}
 
@@ -88,8 +94,13 @@ class CrowdEngine {
 	spawn(user, source = "activity") {
 		const key = this.userKey(user);
 		while (this.avatars.size >= this.config.maxAvatars) {
-			const oldest = [...this.avatars.values()].sort((a, b) => a.lastActive - b.lastActive)[0];
+			const avatars = [...this.avatars.values()];
+			const oldest = (avatars.filter((avatar) => !avatar.djRank).length
+				? avatars.filter((avatar) => !avatar.djRank)
+				: avatars
+			).sort((a, b) => a.lastActive - b.lastActive)[0];
 			this.avatars.delete(oldest.key);
+			this.giftSupporters.delete(oldest.key);
 		}
 		const seed = [...key].reduce((sum, char) => sum + char.charCodeAt(0), 0);
 		const avatar = {
@@ -152,11 +163,26 @@ class CrowdEngine {
 	handleChat(data) {
 		let avatar = this.getOrQueue(data.user, "chat");
 		if (!avatar) avatar = this.spawn(data.user);
-		avatar.chat = String(data.comment || "").slice(0, 54);
+		const comment = String(data.comment || "").slice(0, 54);
+		avatar.chat = comment;
 		avatar.chatUntil = performance.now() + 5200;
 		avatar.lastActive = performance.now();
 		this.burst(avatar, "💬", 4);
 		this.addActivityHeat(data.user, "chat", 8, 8000);
+		if (!this.hypeUntil && !this.pendingHype) {
+			this.queueChatFocus(avatar, comment);
+		}
+	}
+
+	queueChatFocus(commenter, comment) {
+		if (!commenter) return;
+
+		// Keep the newest chat moments so a busy room never builds a stale queue.
+		if (this.chatFocusQueue.length >= 4) this.chatFocusQueue.shift();
+		this.chatFocusQueue.push({
+			avatar: commenter,
+			text: `💬 ${commenter.nickname}: ${comment || "…"}`,
+		});
 	}
 
 	handleLike(data) {
@@ -189,10 +215,12 @@ class CrowdEngine {
 		const fresh = !previous || now - previous.at > 10000 || count === 1;
 		const newCount = fresh ? count : Math.max(0, count - previous.count);
 		this.giftStreaks.set(streakKey, { count, at: now });
-		if (newCount) this.addHeat(Math.min(60, Math.ceil(Math.sqrt(unitValue) * 9 * newCount)), data.user, true);
+		if (newCount) {
+			this.addHeat(Math.min(60, Math.ceil(Math.sqrt(unitValue) * 9 * newCount)), data.user, true);
+			this.recordGiftSupport(avatar, unitValue * newCount, now);
+		}
 		const tier = unitValue > 5 ? "mega" : unitValue === 5 ? "medium" : "small";
 		const duration = tier === "mega" ? 6600 : tier === "medium" ? 3000 : 2700;
-		if (tier === "mega") avatar.hostBadge = true;
 		const gift = {
 			type: "gift",
 			avatar,
@@ -228,6 +256,94 @@ class CrowdEngine {
 			this.giftQueue.push(gift);
 		}
 		avatar.lastActive = performance.now();
+	}
+
+	recordGiftSupport(avatar, value, at = performance.now()) {
+		const previous = this.giftSupporters.get(avatar.key);
+		this.giftSupporters.set(avatar.key, {
+			avatar,
+			total: (previous?.total || 0) + Math.max(0, Number(value) || 0),
+			lastGiftAt: at,
+		});
+		this.updateDjLeaderboard();
+	}
+
+	getDjLeaderboard() {
+		return [...this.giftSupporters.values()]
+			.filter((supporter) => this.avatars.get(supporter.avatar.key) === supporter.avatar)
+			.sort((a, b) => b.total - a.total || b.lastGiftAt - a.lastGiftAt || a.avatar.key.localeCompare(b.avatar.key))
+			.slice(0, 5)
+			.map((supporter, index) => ({
+				...supporter,
+				rank: index + 1,
+				role: ["CHỦ TỊCH", "PHÓ CHỦ TỊCH", "TỔNG QUẢN", "TRƯỞNG BAN", "DJ DANH DỰ"][index],
+			}));
+	}
+
+	updateDjLeaderboard() {
+		const previousRanks = new Map(
+			[...this.avatars.values()]
+				.filter((avatar) => avatar.djRank)
+				.map((avatar) => [avatar.key, avatar.djRank]),
+		);
+		const previousLeader = [...this.avatars.values()].find((avatar) => avatar.djRank === 1) || null;
+		for (const avatar of this.avatars.values()) {
+			avatar.djRank = null;
+			avatar.djRole = null;
+			avatar.giftTotal = 0;
+			avatar.hostBadge = false;
+		}
+		for (const supporter of this.getDjLeaderboard()) {
+			supporter.avatar.djRank = supporter.rank;
+			supporter.avatar.djRole = supporter.role;
+			supporter.avatar.giftTotal = supporter.total;
+			supporter.avatar.hostBadge = supporter.rank === 1;
+		}
+
+		const nextLeaderboard = this.getDjLeaderboard();
+		const nextKeys = new Set(nextLeaderboard.map((supporter) => supporter.avatar.key));
+		for (const [key, oldRank] of previousRanks) {
+			if (nextKeys.has(key)) continue;
+			const avatar = this.avatars.get(key);
+			if (!avatar) continue;
+			avatar.action = "jump";
+			avatar.actionUntil = performance.now() + 2200;
+			this.burst(avatar, "💨", 12);
+			this.djEvents.push({ type: "evicted", avatar, oldRank });
+		}
+
+		for (const supporter of nextLeaderboard) {
+			const oldRank = previousRanks.get(supporter.avatar.key) || null;
+			if (oldRank === supporter.rank) continue;
+			supporter.avatar.action = supporter.rank === 1 ? "power" : "dance";
+			supporter.avatar.actionUntil = performance.now() + 3000;
+			this.burst(supporter.avatar, supporter.rank === 1 ? "👑" : "🎧", supporter.rank === 1 ? 18 : 10);
+			this.rings(supporter.avatar, supporter.rank === 1 ? 5 : 3);
+		}
+
+		const nextLeader = nextLeaderboard[0]?.avatar || null;
+		if (nextLeader && nextLeader !== previousLeader) {
+			const previousNextRank = previousLeader
+				? nextLeaderboard.find((supporter) => supporter.avatar === previousLeader)
+				: null;
+			this.djEvents.push({
+				type: "takeover",
+				avatar: nextLeader,
+				previous: previousLeader,
+				text: previousLeader
+					? `👑 ${nextLeader.nickname} cướp ghế Chủ Tịch! ${previousLeader.nickname} ${previousNextRank ? `lùi xuống ${previousNextRank.role}` : "xuống sàn quẩy tiếp"}!`
+					: `👑 ${nextLeader.nickname} khai trương ghế Chủ Tịch DJ!`,
+			});
+		} else {
+			const newcomer = nextLeaderboard.find((supporter) => !previousRanks.has(supporter.avatar.key));
+			if (newcomer) {
+				this.djEvents.push({
+					type: "joined",
+					avatar: newcomer.avatar,
+					text: `🎧 ${newcomer.avatar.nickname} chen chân lên bàn DJ hạng ${newcomer.rank}!`,
+				});
+			}
+		}
 	}
 
 	startGift(gift) {
@@ -267,7 +383,7 @@ class CrowdEngine {
 			const y = avatar.y - 0.1 + Math.sin(angle) * 0.08;
 			for (let p = 0; p < 14; p += 1) {
 				const direction = Math.PI * 2 * p / 14;
-				this.effects.push({ type: "spark", x, y, vx: Math.cos(direction) * 0.065, vy: Math.sin(direction) * 0.065, life: 1, color: this.config.colors[i % this.config.colors.length] });
+				this.effects.push({ type: "spark", x, y, vx: Math.cos(direction) * 0.065, vy: Math.sin(direction) * 0.065, life: 1, color: this.config.colors[i % this.config.colors.length], anchorKey: avatar.key, anchorX: avatar.x, anchorY: avatar.y });
 			}
 		}
 	}
@@ -283,6 +399,9 @@ class CrowdEngine {
 				vy: -0.05 - Math.random() * 0.05,
 				life: 1,
 				size: 18 + Math.random() * 22,
+				anchorKey: avatar.key,
+				anchorX: avatar.x,
+				anchorY: avatar.y,
 			});
 		}
 	}
@@ -300,7 +419,7 @@ class CrowdEngine {
 
 	rings(avatar, count) {
 		for (let i = 0; i < count; i += 1) {
-			this.effects.push({ type: "ring", x: avatar.x, y: avatar.y - 0.04, life: 1, delay: i * 0.18, color: this.config.colors[i % this.config.colors.length] });
+			this.effects.push({ type: "ring", x: avatar.x, y: avatar.y - 0.04, life: 1, delay: i * 0.18, color: this.config.colors[i % this.config.colors.length], anchorKey: avatar.key, anchorX: avatar.x, anchorY: avatar.y });
 		}
 	}
 
@@ -372,8 +491,34 @@ class CrowdEngine {
 				this.announcements.push({ type: "welcome", text: `${avatar.nickname} cùng quẩy nào anh em ơi!` });
 			}
 		}
+		while (!this.focus && !this.moment && !this.hypeUntil && this.chatFocusQueue.length) {
+			const chatFocus = this.chatFocusQueue.shift();
+			if (this.avatars.get(chatFocus.avatar.key) === chatFocus.avatar) {
+				const until = now + 1800;
+				this.moment = {
+					type: "chat",
+					avatar: chatFocus.avatar,
+					startedAt: now,
+					until,
+					text: chatFocus.text,
+				};
+				chatFocus.avatar.action = "dance";
+				chatFocus.avatar.actionUntil = until;
+				this.fireworksAround(chatFocus.avatar, 8);
+				this.fireworks(7);
+				this.pyroFountains();
+				this.rings(chatFocus.avatar, 4);
+				this.burst(chatFocus.avatar, "✨", 14);
+				if (this.effects.length > 480) {
+					this.effects.splice(0, this.effects.length - 480);
+				}
+			}
+		}
 		for (const avatar of this.avatars.values()) {
-			if (now - avatar.lastActive > this.config.inactivityMs) this.avatars.delete(avatar.key);
+			if (now - avatar.lastActive > this.config.inactivityMs && !avatar.djRank) {
+				this.avatars.delete(avatar.key);
+				this.giftSupporters.delete(avatar.key);
+			}
 			else if (avatar.action && now > avatar.actionUntil && avatar !== this.focus?.avatar) avatar.action = null;
 		}
 	}
